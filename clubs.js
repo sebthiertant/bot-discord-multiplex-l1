@@ -20,7 +20,7 @@ const CLUB_VARIANTS = {
     "Le HAC qui fait trembler les cages !",
     "Les Havreungeursses frappent encore !"
   ],
-  "saintetienne": [
+  "stetienne": [
     "But pour l'AS Saint-Étienne !",
     "C'est le but pour les Verts !",
     "Saint-Étienne qui fait trembler les cages !"
@@ -56,7 +56,7 @@ const CLUB_VARIANTS = {
       "Le RCS marque sur une belle action !"
   ],
   "marseille": [
-      "L'OM fait chavirer le Vélodrome !",
+      "L'O aime fait chavirer le Vélodrome !",
       "Marseille ouvre le score !",
       "Les Olympiens font trembler les filets !"
   ],
