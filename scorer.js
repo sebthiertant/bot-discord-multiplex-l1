@@ -13,6 +13,6 @@ const SCORER_TEMPLATES = [
   "Ce qu'il nous a cuisiné {scorer} ! Quel poulet !",
   "La classe de {scorer} ! Quel joueur !",
   "{scorer} qui envoie une patate de forain tout droit dans la lucarne !",
-  "C'est Olive et Tom ou quoi ? Appelez le {scorer} Atonne !"
+  "C'est Olive et Tom ou quoi ? Le tir de l'aigle ! Appelez le {scorer} Atonne !"
 ];
 module.exports = { SCORER_TEMPLATES };
