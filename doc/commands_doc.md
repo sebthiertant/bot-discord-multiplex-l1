@@ -56,8 +56,8 @@
   Ton club (si pas déjà mémorisé)
 - `!vs <adversaire>`  
   L’adversaire du jour (ex. `!vs Le Havre`)
-- `!ko`  
-  Coup d’envoi (statut LIVE, minute 0 si non définie)
+- `!st`  
+  Coup d’envoi (Start - statut LIVE, minute 0)
 - `!min <n>`  
   Fixe la minute de départ si besoin (ex. `!min 5`)
 

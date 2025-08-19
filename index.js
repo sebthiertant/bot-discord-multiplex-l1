@@ -475,17 +475,20 @@ client.on('messageCreate', async (msg) => {
     }
 
 
-    if (cmd === '!ko') {
-      if (m.status === 'FIN') {
+    if (cmd === '!st' || cmd === '!ko') {            // <- accepte !st (nouveau) et !ko (alias)
+      if (m.status === 'FT') {
         resetMatch(m, { keepTeam: true, keepOpp: true });
       }
       m.status = 'LIVE';
       if (m.minute == null) m.minute = 0;
-      await msg.reply('🟢 Coup d’envoi !');
+
+      // message adapté
+      const aliasNote = (cmd === '!ko') ? " (alias `!ko` encore supporté)" : "";
+      await msg.reply(`🟢 Début du match !${aliasNote}`);
+
       await updateBoardMsg(client, guildId);
       return;
     }
-
 
     if (cmd === '!mt') {
       m.status = 'MT';
