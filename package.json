@@ -1,0 +1,22 @@
+{
+  "name": "bot_discord_l1_multiplex",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@discordjs/opus": "^0.10.0",
+    "@discordjs/voice": "^0.19.0",
+    "@snazzah/davey": "^0.1.6",
+    "discord.js": "^14.21.0",
+    "dotenv": "^17.2.1",
+    "ffmpeg-static": "^5.2.0",
+    "microsoft-cognitiveservices-speech-sdk": "^1.45.0"
+  }
+}
