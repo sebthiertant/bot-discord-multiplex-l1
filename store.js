@@ -59,4 +59,23 @@ async function saveNow() {
   await fs.promises.rename(tmp, PROFILES_PATH);
 }
 
-module.exports = { loadProfiles, getTeam, setTeam, clearTeam };
+function ensureGuild(gid){ if(!memory.guilds[gid]) memory.guilds[gid]={}; }
+
+function getBoard(gid){
+  return memory.guilds?.[gid]?._board || null; // { channelId, msgId }
+}
+
+function setBoard(gid, channelId, msgId){
+  ensureGuild(gid);
+  memory.guilds[gid]._board = { channelId, msgId };
+  scheduleSave();
+}
+
+function clearBoard(gid){
+  if (memory.guilds?.[gid]?._board){
+    delete memory.guilds[gid]._board;
+    scheduleSave();
+  }
+}
+
+module.exports = { loadProfiles, getTeam, setTeam, clearTeam, getBoard, setBoard, clearBoard };

@@ -13,7 +13,17 @@ process.env.FFMPEG_PATH = ffmpegPath;
 
 const fs = require('fs');
 const path = require('path');
-const { Client, GatewayIntentBits, Partials, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const {
+  Client,
+  GatewayIntentBits,
+  Partials,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  PermissionFlagsBits,
+  ChannelType,            // ✅ AJOUT
+} = require('discord.js');
+
 const {
   joinVoiceChannel,
   createAudioPlayer,
@@ -66,6 +76,46 @@ function resetMatch(m, { keepTeam = true, keepOpp = true } = {}) {
   m.hist = [];
   m.status = 'IDLE';
   if (!keepOpp) m.opp = null;
+}
+
+async function ensureBoardMessage(client, guildId, channel) {
+  const payload = renderBoard(guildId, client);
+  const sent = await channel.send(payload);
+
+  let pinned = false;
+  let pinError = null;
+
+  try {
+    const me = channel.guild.members.me;
+    const perms = channel.permissionsFor(me);
+    if (perms?.has('ManageMessages')) {
+      await sent.pin();                 // tente d’épingler
+      pinned = true;
+    } else {
+      pinError = "Permission manquante: Manage Messages";
+    }
+  } catch (e) {
+    pinError = e?.message || String(e); // ex: quota d’épingles atteint
+  }
+
+  store.setBoard(guildId, channel.id, sent.id);
+  return { sent, pinned, pinError };
+}
+
+async function updateBoardMsg(client, guildId) {
+  const meta = store.getBoard(guildId);
+  if (!meta) return; // pas de board configuré
+  try {
+    const ch = await client.channels.fetch(meta.channelId);
+    const msg = await ch.messages.fetch(meta.msgId);
+    await msg.edit(renderBoard(guildId, client));
+  } catch {
+    // message supprimé → on recrée au même endroit
+    try {
+      const ch = await client.channels.fetch(meta.channelId);
+      await ensureBoardMessage(client, guildId, ch);
+    } catch { }
+  }
 }
 
 // Rotation non-répétitive
@@ -204,13 +254,50 @@ function buildGoalAnnouncement(team, opp, f, a, minute, scorer, cmd) {
       else statusLine = '';
     }
   }
-
   return [base, scoreLine, statusLine, minuteLine]
     .filter(Boolean)
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+// Supprime tous les messages du salon (épinglés inclus)
+async function purgeChannel(channel) {
+  const me = channel.guild.members.me;
+  const perms = channel.permissionsFor(me);
+  if (!perms?.has(PermissionFlagsBits.ManageMessages) || !perms?.has(PermissionFlagsBits.ReadMessageHistory)) {
+    throw new Error("Permissions requises : Gérer les messages + Lire l'historique.");
+  }
+
+  // 1) Désépingler + supprimer les pins
+  try {
+    const pins = await channel.messages.fetchPinned();
+    for (const [, msg] of pins) {
+      try { await msg.unpin().catch(() => { }); } catch { }
+      if (msg.deletable) { await msg.delete().catch(() => { }); }
+    }
+  } catch { }
+
+  // 2) Purge normale (bulk < 14j, sinon un par un)
+  const TWO_WEEKS = 14 * 24 * 60 * 60 * 1000;
+  while (true) {
+    const batch = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+    if (!batch || batch.size === 0) break;
+
+    const younger = batch.filter(m => (Date.now() - m.createdTimestamp) < TWO_WEEKS);
+    const older = batch.filter(m => !younger.has(m.id));
+
+    if (younger.size) {
+      await channel.bulkDelete(younger, true).catch(() => { });
+    }
+    for (const [, msg] of older) {
+      if (msg.deletable) { await msg.delete().catch(() => { }); }
+    }
+
+    if (batch.size < 100) break;
+  }
+}
+
 
 // --- AUDIO ---
 async function ensureConnection(voiceChannel, stayFlag = false) {
@@ -366,7 +453,7 @@ client.on('messageCreate', async (msg) => {
       m.team = team;
       store.setTeam(guildId, msg.author.id, team);
       await msg.reply(`✅ Club défini : **${m.team}**`);
-      await updateBoardMsgFromChannel(msg.channel, guildId, client);
+      await updateBoardMsg(client, guildId);
       return;
     }
 
@@ -383,7 +470,7 @@ client.on('messageCreate', async (msg) => {
 
       m.opp = opp;
       await msg.reply(`🤝 Adversaire : **${m.opp}**${(wasFT || isNewOpp) ? " — score remis à 0." : ""}`);
-      await updateBoardMsgFromChannel(msg.channel, guildId, client);
+      await updateBoardMsg(client, guildId);
       return;
     }
 
@@ -395,7 +482,7 @@ client.on('messageCreate', async (msg) => {
       m.status = 'LIVE';
       if (m.minute == null) m.minute = 0;
       await msg.reply('🟢 Coup d’envoi !');
-      await updateBoardMsgFromChannel(msg.channel, guildId, client);
+      await updateBoardMsg(client, guildId);
       return;
     }
 
@@ -403,14 +490,14 @@ client.on('messageCreate', async (msg) => {
     if (cmd === '!mt') {
       m.status = 'MT';
       await msg.reply('🟡 Mi-temps.');
-      await updateBoardMsgFromChannel(msg.channel, guildId, client);
+      await updateBoardMsg(client, guildId);
       return;
     }
 
     if (cmd === '!fin') {
       m.status = 'FIN';
       await msg.reply('🔴 Fin du match.');
-      await updateBoardMsgFromChannel(msg.channel, guildId, client);
+      await updateBoardMsg(client, guildId);
       return;
     }
 
@@ -419,7 +506,7 @@ client.on('messageCreate', async (msg) => {
       if (Number.isNaN(n)) return void msg.reply("Utilise : `!min <minute>`");
       m.minute = Math.max(0, n);
       await msg.reply(`⏱️ Minute réglée sur **${m.minute}’**`);
-      await updateBoardMsgFromChannel(msg.channel, guildId, client);
+      await updateBoardMsg(client, guildId);
       return;
     }
 
@@ -428,7 +515,7 @@ client.on('messageCreate', async (msg) => {
       if (!last) return void msg.reply("Rien à annuler.");
       Object.assign(m, last.prev);
       await msg.reply('↩️ Dernière action annulée.');
-      await updateBoardMsgFromChannel(msg.channel, guildId, client);
+      await updateBoardMsg(client, guildId);
       return;
     }
 
@@ -454,31 +541,58 @@ client.on('messageCreate', async (msg) => {
         `${cmd === '!g' ? '⚽' : '🥅'} ${m.team || '—'} ${m.for}-${m.against} ${m.opp || '—'} ${m.minute ? `${m.minute}’` : ''}`
           .replace(/\s+/g, ' ').trim()
       );
-      await updateBoardMsgFromChannel(msg.channel, guildId, client);
+      await updateBoardMsg(client, guildId);
       return;
     }
 
-    // TODO à améliorer
-    if (cmd === '!board') {
-      const g = getGuildDay(guildId);
-      const payload = renderBoard(guildId, client);
-      if (g.boardMsgId) {
-        try {
-          const mObj = await msg.channel.messages.fetch(g.boardMsgId);
-          await mObj.edit(payload);
-          await msg.reply('📋 Tableau mis à jour.');
-        } catch {
-          const sent = await msg.channel.send(payload);
-          g.boardMsgId = sent.id;
-          await msg.reply('📋 Tableau créé.');
-        }
-      } else {
-        const sent = await msg.channel.send(payload);
-        g.boardMsgId = sent.id;
-        await msg.reply('📋 Tableau créé.');
+    if (cmd === '!boardset') {
+      const target =
+        msg.mentions.channels.first() ||
+        msg.guild.channels.cache.get(rest[0]) ||
+        msg.channel;
+
+      if (!target || target.type !== ChannelType.GuildText) {
+        return void msg.channel.send("Indique un salon texte valide : `!boardset #multiplex-board`");
       }
+
+      // 🔥 Purge AVANT toute réponse
+      try {
+        await purgeChannel(target);
+      } catch (e) {
+        return void msg.channel.send(`Impossible de nettoyer ${target}: ${e?.message || e}`);
+      }
+
+      const existing = store.getBoard(guildId);
+      const { sent, pinned, pinError } = await ensureBoardMessage(client, guildId, target);
+
+      if (existing && (existing.channelId !== target.id || existing.msgId !== sent.id)) {
+        try {
+          const oldCh = await client.channels.fetch(existing.channelId);
+          const oldMsg = await oldCh.messages.fetch(existing.msgId);
+          await oldMsg.delete();
+        } catch { }
+      }
+
+      await msg.channel.send(
+        pinned
+          ? `📌 Tableau initialisé dans ${target} et **épinglé** (canal nettoyé).`
+          : `📌 Tableau initialisé dans ${target}, **non épinglé**. Détail: ${pinError || 'inconnu'}`
+      );
       return;
     }
+
+
+
+    if (cmd === '!board') {
+      const meta = store.getBoard(guildId);
+      if (!meta) {
+        return void msg.reply("Aucun tableau configuré. Lance `!boardset #multiplex-board` d’abord.");
+      }
+      await updateBoardMsg(client, guildId);
+      const ch = await client.channels.fetch(meta.channelId).catch(() => null);
+      return void msg.reply(`📋 Tableau mis à jour dans ${ch ? ch.toString() : '<inconnu>'}.`);
+    }
+
 
     // ===== Suivi de journée =====
 
@@ -550,15 +664,6 @@ async function updateBoardMessage(interaction) {
     await msg.edit(renderBoard(interaction.guildId, interaction.client));
   } catch { }
 }
-
-async function updateBoardMsgFromChannel(channel, guildId, client) {
-  const g = getGuildDay(guildId); if (!g.boardMsgId) return;
-  try {
-    const m = await channel.messages.fetch(g.boardMsgId);
-    await m.edit(renderBoard(guildId, client));
-  } catch {/* ignore */ }
-}
-
 
 function makePanelRows(userId) {
   const row1 = new ActionRowBuilder().addComponents(
