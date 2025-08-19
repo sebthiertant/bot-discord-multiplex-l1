@@ -1,11 +1,14 @@
-// tts.js
+// tts.js  (CommonJS, Azure)
+// Lecture homogène (même intensité sur toute la phrase)
+
 const sdk = require("microsoft-cognitiveservices-speech-sdk");
 
-// Recommandé :
-const DEFAULT_VOICE = "fr-FR-HenriNeural";
-const DEG = 2;      // intensité émotionnelle (1.1 à 2.0)
-const RATE_PCT = 1.2;   // vitesse de parole +2%
-const PITCH_ST = -0.3; // hauteur -0.3 demi-ton (plus grave)
+// Réglages par défaut (ajustables via .env si tu veux)
+const DEFAULT_VOICE = process.env.AZURE_VOICE || "fr-FR-HenriNeural";
+const DEG       = Number(process.env.AZURE_DEG || 1.7);    // 1.1–2.0
+const RATE_PCT  = Number(process.env.AZURE_RATE || 2);     // %
+const PITCH_ST  = Number(process.env.AZURE_PITCH || -1.2); // demi-tons (négatif = plus grave)
+const STYLE     = process.env.AZURE_STYLE || "excited";    // "excited" ou "cheerful"
 
 async function synthToFile(text, outPath, voiceName = DEFAULT_VOICE) {
   const speechConfig = sdk.SpeechConfig.fromSubscription(
@@ -13,7 +16,7 @@ async function synthToFile(text, outPath, voiceName = DEFAULT_VOICE) {
     process.env.AZURE_SPEECH_REGION
   );
 
-  // Format MP3 propre pour Discord (méthode compatible v1.45)
+  // Format MP3 propre pour Discord (v1.45: assignation ou setProperty)
   try {
     speechConfig.speechSynthesisOutputFormat =
       sdk.SpeechSynthesisOutputFormat.Audio48Khz192KBitRateMonoMp3;
@@ -32,7 +35,7 @@ async function synthToFile(text, outPath, voiceName = DEFAULT_VOICE) {
     await speakSsmlAsync(speechConfig, audioConfig, ssml);
     return outPath;
   } catch (e) {
-    console.warn("[TTS] SSML riche refusé, fallback simple…", e?.message || e);
+    console.warn("[TTS] SSML refusé, fallback simple…", e?.message || e);
     const fallback = buildSimpleSSML(text, voiceName);
     await speakSsmlAsync(speechConfig, audioConfig, fallback);
     return outPath;
@@ -42,7 +45,7 @@ async function synthToFile(text, outPath, voiceName = DEFAULT_VOICE) {
 function buildSSML(text, voiceName) {
   const safe = escapeXml(String(text));
   const body = `
-    <mstts:express-as style="excited" styledegree="${DEG}">
+    <mstts:express-as style="${STYLE}" styledegree="${DEG}">
       <prosody rate="${RATE_PCT >= 0 ? '+' : ''}${RATE_PCT}%"
                pitch="${PITCH_ST >= 0 ? '+' : ''}${PITCH_ST}st">
         ${safe}
@@ -92,6 +95,5 @@ function escapeXml(s) {
     ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[c])
   );
 }
-function sign(n){ return n >= 0 ? "+" : "-"; }
 
 module.exports = { synthToFile };
