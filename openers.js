@@ -6,7 +6,11 @@ const OPENERS = [
   "Quel but !",
   "Quel bombasso !",
   "Quel tir !",
-  "La minasse !"
+  "La minasse !", 
+  "La surprise du chef !",
+  "C'est pas possible ! Quel but !",
+  "BADABOUM !",
+  "Po po po !"
 ];
 
 module.exports = { OPENERS };
