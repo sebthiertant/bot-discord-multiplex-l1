@@ -72,9 +72,13 @@
 - `!gc [minute] [buteur…]`  
   But CONTRE (incrémente l’adversaire)
 - `!min <n>`  
-  Règle la minute courante
+  règle la minute
 - `!mt`  
-  Mi-temps
+  mi-temps (passe à 45’)
+- `!2nd`  
+  début de la seconde période (passe à 46’)
+- `!fin`  
+  fin du match (passe à 90’)
 - `!undo`  
   Annule ta dernière action (score/minute/statut)
 

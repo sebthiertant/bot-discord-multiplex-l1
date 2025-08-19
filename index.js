@@ -174,8 +174,21 @@ function renderBoard(guildId, client) {
     const tag = user ? user.username : uid;
     const head = m.team || "—";
     const opp = m.opp || "—";
-    const badge = m.status === 'LIVE' ? '🟢' : m.status === 'MT' ? '🟡' : m.status === 'FIN' ? '🔴' : '⚪';
-    lines.push(`**${tag}** — ${head} ${m.for}-${m.against} ${opp} ${fmtMin(m.minute)} ${badge}`);
+    const badge =
+      m.status === 'H2' ? '🟢' :
+        m.status === 'LIVE' ? '🟢' :
+          m.status === 'HT' ? '🟡' :
+            m.status === 'FT' ? '🔴' : '⚪';
+
+    const phase =
+      m.status === 'H2' ? '2e MT' :
+        m.status === 'LIVE' ? 'LIVE' :
+          m.status === 'HT' ? 'MT' :
+            m.status === 'FT' ? 'FIN' : '';
+
+    const min = fmtMinDisplay(m.minuteLabel ?? m.minute);
+    lines.push(`**${tag}** — ${head} ${m.for}-${m.against} ${opp} ${min} ${badge} ${phase}`);
+
   }
   return { content: lines.join("\n") || "Aucun match.", allowedMentions: { parse: [] } };
 }
@@ -492,13 +505,29 @@ client.on('messageCreate', async (msg) => {
 
     if (cmd === '!mt') {
       m.status = 'MT';
+      m.minute = 45;
+      m.minuteLabel = '45';
       await msg.reply('🟡 Mi-temps.');
+      await updateBoardMsg(client, guildId);
+      return;
+    }
+
+    // 🟢 Début de la seconde période → minute min 46
+    if (cmd === '!2nd') {
+      m.status = 'H2';
+      if ((m.minute ?? 0) < 46) {
+        m.minute = 46;
+        m.minuteLabel = '46';
+      }
+      await msg.reply('🟢 Début de la seconde période (46’).');
       await updateBoardMsg(client, guildId);
       return;
     }
 
     if (cmd === '!fin') {
       m.status = 'FIN';
+      m.minute = 90;
+      m.minuteLabel = '90';
       await msg.reply('🔴 Fin du match.');
       await updateBoardMsg(client, guildId);
       return;
