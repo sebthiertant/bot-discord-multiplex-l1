@@ -1,8 +1,8 @@
-# Multiplex L1 – Bot Discord “jingle + annonces” pour Football Manager
+# Multiplex L1 – Bot Discord "jingle + annonces" pour Football Manager
 
 Bot Discord pour vos parties FM en réseau :
 
-Joue le jingle “but” puis une annonce vocale (Azure Speech).
+Joue le jingle "but" puis une annonce vocale (Azure Speech).
 
 Suis un match par joueur (score, minute, statut, adversaire).
 
@@ -12,8 +12,9 @@ Mémorise le club de chaque joueur (par serveur).
 
 ## **✨ Fonctionnalités**
 
-- Audio : jingle MP3 + TTS Azure (voix FR, ton “excited”, paramètres ajustables).
-- Multiplex : le bot rejoint un salon vocal et y reste tant qu’il y a des humains.
+- Audio : jingle MP3 + TTS Azure (voix FR, ton "excited", paramètres ajustables).
+- Multiplex : le bot rejoint un salon vocal et y reste tant qu'il y a des humains.
+- Hymnes UEFA : `!ldc` (Ligue des Champions) et `!eur` (Europa League).
 - Suivi léger (sans intégration FM) :
   - score, minute, buteur, adversaire, statuts (LIVE, MT, 2e MT, FIN).
   - annonces vocales variées (openers, variantes par club, modèles buteur).
@@ -64,6 +65,8 @@ AZURE_PITCH=-1.2          # hauteur en demi-tons (négatif = plus grave)
 - `clubs.js / openers.js / scorer.js` : variantes de texte pour les annonces.
 - `store.js` : persistance JSON (data/profiles.json).
 - `assets/but.mp3` : jingle du multiplex.
+- `assets/ucl_anthem.mp3` : hymne Ligue des Champions (à ajouter).
+- `assets/europa_anthem.mp3` : hymne Europa League (à ajouter).
 
 ## **☁️ Mise en place Azure Speech (rapide)**
 
@@ -107,6 +110,10 @@ Initialisation générale
 - `!me <club>` → définit ET mémorise ton club (par serveur)
 - `!whoami` → affiche ton club mémorisé
 - `!forgetme` → oublie ton club mémorisé
+
+Hymnes UEFA
+- `!ldc` → joue l'hymne de la Ligue des Champions
+- `!eur` → joue l'hymne de l'Europa League
 
 Avant-match
 - `!vs <adversaire>` → définit l’adversaire
@@ -208,6 +215,10 @@ Jingle : utilisez un son libre de droits ou votre propre audio.
 ```
 !multiplex (dans un salon vocal)
 
+!ldc (teste l'hymne LdC)
+
+!eur (teste l'hymne Europa)
+
 !me Angers
 
 !vs Marseille
@@ -220,7 +231,7 @@ Jingle : utilisez un son libre de droits ou votre propre audio.
 
 !boardset #multiplex-board (une seule fois)
 
-!board (devrait dire “mis à jour” et éditer le message épinglé).
+!board (devrait dire "mis à jour" et éditer le message épinglé).
 ```
 
 ## **📦 Déploiement (optionnel)**
