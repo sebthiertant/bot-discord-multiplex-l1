@@ -21,7 +21,7 @@ const {
   ButtonBuilder,
   ButtonStyle,
   PermissionFlagsBits,
-  ChannelType,            // ✅ AJOUT
+  ChannelType,
 } = require('discord.js');
 
 const {
@@ -35,6 +35,11 @@ const {
 } = require('@discordjs/voice');
 
 const { synthToFile } = require('./tts.js');
+
+// --- TEXTE TTS IMPORTS (keep only these, remove duplicates) ---
+const { CLUB_VARIANTS, CONCEDING_TEAM_PHRASES } = require('./clubs.js');
+const { OPENERS, CONCEDING_OPENERS, MINIMAL_OPENERS, ANNOUNCEMENT_PATTERNS, MINIMAL_TEMPLATES, weightedRandom } = require('./openers.js');
+const { SCORER_TEMPLATES, FINISHING_SCORER_TEMPLATES, SCORER_FIRST_TEMPLATES, MINIMAL_SCORER_TEMPLATES, HUMILIATION_TEMPLATES } = require('./scorer.js');
 
 console.log(generateDependencyReport());
 
@@ -56,8 +61,6 @@ const md = new Map();
 function normalizeKey(s) {
   return s?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '') || null;
 }
-function rand(arr) { return arr[Math.floor(Math.random() * arr.length)] }
-function pretty(k) { return (k || '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()); }
 
 function getGuildDay(guildId) {
   let g = md.get(guildId);
@@ -125,24 +128,28 @@ const _clubIdx = new Map(); // clubKey -> idx
 
 function nextOpener() {
   if (!OPENERS?.length) return "Hé !";
-  const val = OPENERS[_openerIdx % OPENERS.length];
-  _openerIdx = (_openerIdx + 1) % OPENERS.length;
-  return val;
-}
-function nextScorerTpl() {
-  if (!SCORER_TEMPLATES?.length) return "But de {scorer} !";
-  const val = SCORER_TEMPLATES[_scorerIdx % SCORER_TEMPLATES.length];
-  _scorerIdx = (_scorerIdx + 1) % SCORER_TEMPLATES.length;
-  return val;
-}
-function nextClubVariant(clubKey, arr) {
-  if (!arr?.length) return null;
-  const prev = _clubIdx.get(clubKey) || 0;
-  const val = arr[prev % arr.length];
-  _clubIdx.set(clubKey, (prev + 1) % arr.length);
-  return val;
+  return weightedRandom(OPENERS);
 }
 
+function nextScorerTpl() {
+  if (!SCORER_TEMPLATES?.length) return "But de {scorer} !";
+  return weightedRandom(SCORER_TEMPLATES);
+}
+
+function nextClubVariant(clubKey, arr) {
+  if (!arr?.length) return null;
+  return weightedRandom(arr);
+}
+
+// Nouvelle fonction pour les phrases d'équipe qui encaisse
+function getConcedingTeamPhrase(team) {
+  const phrases = CONCEDING_TEAM_PHRASES.default || [];
+  if (!phrases.length) return `La défense de ${team} qui craque`;
+  const phrase = weightedRandom(phrases);
+  return phrase.replace('{team}', team);
+}
+
+// --- TEXTE TTS ---
 function getMatch(guildId, userId) {
   const g = getGuildDay(guildId);
 
@@ -164,39 +171,36 @@ function getMatch(guildId, userId) {
   return m;
 }
 
-function fmtMin(n) { return n ? `${n}’` : ``; }
-
-function renderBoard(guildId, client) {
-  const g = getGuildDay(guildId);
-  const lines = [];
-  for (const [uid, m] of g.matches.entries()) {
-    const user = client.users.cache.get(uid);
-    const tag = user ? user.username : uid;
-    const head = m.team || "—";
-    const opp = m.opp || "—";
-    const badge =
-      m.status === 'H2' ? '🟢' :
-        m.status === 'LIVE' ? '🟢' :
-          m.status === 'HT' ? '🟡' :
-            m.status === 'FT' ? '🔴' : '⚪';
-
-    const phase =
-      m.status === 'H2' ? '2e MT' :
-        m.status === 'LIVE' ? 'LIVE' :
-          m.status === 'HT' ? 'MT' :
-            m.status === 'FT' ? 'FIN' : '';
-
-    const min = fmtMinDisplay(m.minuteLabel ?? m.minute);
-    lines.push(`**${tag}** — ${head} ${m.for}-${m.against} ${opp} ${min} ${badge} ${phase}`);
-
-  }
-  return { content: lines.join("\n") || "Aucun match.", allowedMentions: { parse: [] } };
+function fmtMinDisplay(labelOrNum) {
+  return (labelOrNum || labelOrNum === 0) ? `${labelOrNum}’` : '';
 }
 
-// --- TEXTE TTS ---
-const { CLUB_VARIANTS } = require('./clubs.js');
-const { OPENERS } = require('./openers.js');
-const { SCORER_TEMPLATES } = require('./scorer.js');
+function renderBoard(guildId, client){
+  const g = getGuildDay(guildId);
+  const lines = [];
+  for (const [uid, m] of g.matches.entries()){
+    const user  = client.users.cache.get(uid);
+    const tag   = user ? user.username : uid;
+    const head  = m.team || "—";
+    const opp   = m.opp  || "—";
+
+    const badge =
+      m.status === 'H2'   ? '🟢' :
+      m.status === 'LIVE' ? '🟢' :
+      m.status === 'HT'   ? '🟡' :
+      m.status === 'FT'   ? '🔴' : '⚪';
+
+    const phase =
+      m.status === 'H2'   ? '2e MT' :
+      m.status === 'LIVE' ? 'LIVE'  :
+      m.status === 'HT'   ? 'MT'    :
+      m.status === 'FT'   ? 'FIN'   : '';
+
+    const min = fmtMinDisplay(m.minuteLabel ?? m.minute);
+    lines.push(`**${tag}** — ${head} ${m.for}-${m.against} ${opp} ${min} ${badge} ${phase}`.trim());
+  }
+  return { content: lines.join("\n") || "Aucun match.", allowedMentions:{parse:[]} };
+}
 
 function buildTtsSentence(clubRaw, scorerRaw) {
   const clubKey = normalizeKey(clubRaw);
@@ -206,13 +210,13 @@ function buildTtsSentence(clubRaw, scorerRaw) {
   parts.push(nextOpener()); // ex: "Hé !", "Oh oui !", …
 
   if (variants) {
-    parts.push(nextClubVariant(clubKey, variants)); // varie entre les phrases du club
+    parts.push(nextClubVariant(clubKey, variants)); // varie entre les phrases du club avec pondération
   } else {
     parts.push(clubRaw ? `But pour ${clubRaw} !` : "But !");
   }
 
   if (scorerRaw) {
-    const tpl = nextScorerTpl(); // varie entre les phrases buteur
+    const tpl = nextScorerTpl(); // varie entre les phrases buteur avec pondération
     parts.push(tpl.replace('{scorer}', scorerRaw));
   }
 
@@ -223,6 +227,7 @@ function buildTtsSentence(clubRaw, scorerRaw) {
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)] }
 
 // TODO A deplacer
+// et parler aussi de l'équipe qui encaisse
 const PHRASES = {
   takeLead: ["prend l’avantage.", "passe devant.", "prend les commandes."],
   extendLeadBreak: ["fait le break.", "creuse l’écart.", "se met à l’abri."],
@@ -232,6 +237,9 @@ const PHRASES = {
   weStillLead: ["conserve l’avantage.", "reste devant."]
 };
 
+// TODO gérer les buts dans les dernières minutes
+// et parler aussi de l'équipe qui encaisse
+// refacto avec des switch cases ?
 function buildGoalAnnouncement(team, opp, f, a, minute, scorer, cmd) {
   const isFor = cmd === '!g';
 
@@ -239,14 +247,171 @@ function buildGoalAnnouncement(team, opp, f, a, minute, scorer, cmd) {
   const prevF = isFor ? f - 1 : f;
   const prevA = isFor ? a : a - 1;
 
-  // Phrase d’ouverture + club & buteur (tes fichiers textes)
-  const base = buildTtsSentence(isFor ? team : opp, scorer);
+  // Vérifier les cas d'humiliation spéciaux AVANT de choisir un pattern normal
+  const scoringTeam = isFor ? team : opp;
+  const concedingTeam = isFor ? opp : team;
+  const scoringTeamScore = isFor ? f : a;
+  const concedingTeamScore = isFor ? a : f;
+  
+  // Cas spéciaux d'humiliation
+  if (concedingTeamScore === 0 && scoringTeamScore === 5) {
+    // MANITA (5-0)
+    const opener = weightedRandom(OPENERS);
+    const template = weightedRandom(HUMILIATION_TEMPLATES.manita);
+    let base = `${opener} ${template}`;
+    
+    // Remplacer les placeholders
+    base = base.replace('{team}', scoringTeam || 'l\'équipe qui marque');
+    base = base.replace('{conceding_team}', concedingTeam || 'l\'équipe adverse');
+    if (scorer) {
+      base = base.replace('{scorer}', scorer);
+    } else {
+      // Enlever la partie scorer si pas de buteur
+      base = base.split('!')[0] + ' !'; // Garde juste la première partie
+    }
+    
+    console.log(`[DEBUG] Pattern sélectionné: MANITA, isFor: ${isFor}, scorer: ${scorer || 'none'}`);
+    
+    // Lignes info
+    const scoreLine = (team && opp) ? `${team} ${f}, ${opp} ${a}.` : '';
+    const minuteLine = minute ? `${minute}e minute.` : '';
+    
+    return [base, scoreLine, minuteLine]
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  
+  if (concedingTeamScore === 0 && scoringTeamScore === 10) {
+    // FANNI (10-0)
+    const opener = weightedRandom(OPENERS);
+    const template = weightedRandom(HUMILIATION_TEMPLATES.fanni);
+    let base = `${opener} ${template}`;
+    
+    // Remplacer les placeholders
+    base = base.replace('{conceding_team}', concedingTeam || 'l\'équipe qui encaisse');
+    if (scorer) {
+      // Pour le fanni, on peut ajouter le buteur à la fin
+      base += ` Et c'est ${scorer} qui porte le coup de grâce !`;
+    }
+    
+    console.log(`[DEBUG] Pattern sélectionné: FANNI, isFor: ${isFor}, scorer: ${scorer || 'none'}`);
+    
+    // Lignes info
+    const scoreLine = (team && opp) ? `${team} ${f}, ${opp} ${a}.` : '';
+    const minuteLine = minute ? `${minute}e minute.` : '';
+    
+    return [base, scoreLine, minuteLine]
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  // Si pas de cas spécial, continuer avec la logique normale
+  // Sélectionner un pattern d'annonce de façon pondérée
+  const patternObj = weightedRandom(ANNOUNCEMENT_PATTERNS);
+  const pattern = patternObj.type;
+  
+  let base = '';
+  
+  switch (pattern) {
+    case 'classic': {
+      // Pattern classique : Opener + Club + Scorer
+      base = buildTtsSentence(isFor ? team : opp, scorer);
+      break;
+    }
+    
+    case 'scorer_first': {
+      // Pattern buteur en premier : Opener + Scorer + Club
+      if (scorer && team && opp) {
+        const opener = weightedRandom(OPENERS);
+        const scorerTemplate = weightedRandom(SCORER_FIRST_TEMPLATES);
+        const clubName = isFor ? team : opp;
+        
+        base = `${opener} ${scorerTemplate.replace('{scorer}', scorer)} pour ${clubName} !`;
+      } else {
+        // Fallback vers pattern classique si pas assez d'infos
+        base = buildTtsSentence(isFor ? team : opp, scorer);
+      }
+      break;
+    }
+    
+    case 'scorer_only': {
+      // Pattern sans club : focus sur le buteur
+      if (scorer) {
+        const opener = weightedRandom(OPENERS);
+        const scorerTemplate = weightedRandom(SCORER_TEMPLATES);
+        
+        base = `${opener} ${scorerTemplate.replace('{scorer}', scorer)}`;
+      } else {
+        // Fallback : juste l'opener + "But !"
+        const opener = weightedRandom(OPENERS);
+        base = `${opener} But !`;
+      }
+      break;
+    }
+    
+    case 'conceding': {
+      // Pattern défense qui craque
+      if (team && opp) {
+        // FIX: Toujours parler de l'équipe qui encaisse, peu importe qui marque
+        const concedingTeam = isFor ? opp : team;
+        const concedingPhrase = getConcedingTeamPhrase(concedingTeam);
+        const concedingOpener = weightedRandom(CONCEDING_OPENERS);
+        
+        base = `${concedingOpener} ${concedingPhrase}.`;
+        
+        if (scorer) {
+          // Utiliser le bon template selon le contexte du score
+          const scoringTeamScore = isFor ? f : a;
+          const concedingTeamScore = isFor ? a : f;
+          
+          // Si l'équipe qui marque prend 2+ buts d'avance, utiliser les finishing templates
+          if (scoringTeamScore - concedingTeamScore >= 2) {
+            const finishingTemplate = weightedRandom(FINISHING_SCORER_TEMPLATES);
+            base += ` ${finishingTemplate.replace('{scorer}', scorer)}`;
+          } else {
+            // Sinon, utiliser les templates normaux
+            const normalTemplate = weightedRandom(SCORER_TEMPLATES);
+            base += ` ${normalTemplate.replace('{scorer}', scorer)}`;
+          }
+        }
+      } else {
+        // Fallback vers pattern classique
+        base = buildTtsSentence(isFor ? team : opp, scorer);
+      }
+      break;
+    }
+    
+    case 'minimal': {
+      // Pattern minimaliste : très direct
+      if (scorer) {
+        const template = weightedRandom(MINIMAL_TEMPLATES);
+        base = template.replace('{scorer}', scorer);
+      } else {
+        const opener = weightedRandom(MINIMAL_OPENERS);
+        base = `${opener} But !`;
+      }
+      break;
+    }
+    
+    default: {
+      // Fallback sécurisé
+      base = buildTtsSentence(isFor ? team : opp, scorer);
+      break;
+    }
+  }
+
+  // Debug pour vérifier les patterns utilisés
+  console.log(`[DEBUG] Pattern sélectionné: ${pattern}, isFor: ${isFor}, scorer: ${scorer || 'none'}`);
 
   // Lignes info
   const scoreLine = (team && opp) ? `${team} ${f}, ${opp} ${a}.` : '';
   const minuteLine = minute ? `${minute}e minute.` : '';
 
-  // Ligne statut en fonction de l’évolution du score
+  // Ligne statut en fonction de l'évolution du score
   let statusLine = '';
   if (team && opp) {
     if (isFor) {
@@ -256,7 +421,7 @@ function buildGoalAnnouncement(team, opp, f, a, minute, scorer, cmd) {
         const newMargin = f - a;
         statusLine = `${team} ${pick(newMargin === 2 ? PHRASES.extendLeadBreak : PHRASES.extendLead)}`;
       } else if (prevF < prevA && f < a) statusLine = `${team} ${pick(PHRASES.reduceGap)}`;
-      else statusLine = ''; // cas limites
+      else statusLine = '';
     } else {
       if (prevF > prevA && a === f) statusLine = `${opp} ${pick(PHRASES.equalize)}`;
       else if (prevF === prevA && a > f) statusLine = `${opp} ${pick(PHRASES.takeLead)}`;
@@ -267,6 +432,7 @@ function buildGoalAnnouncement(team, opp, f, a, minute, scorer, cmd) {
       else statusLine = '';
     }
   }
+  
   return [base, scoreLine, statusLine, minuteLine]
     .filter(Boolean)
     .join(' ')
@@ -310,7 +476,6 @@ async function purgeChannel(channel) {
     if (batch.size < 100) break;
   }
 }
-
 
 // --- AUDIO ---
 async function ensureConnection(voiceChannel, stayFlag = false) {
@@ -655,9 +820,9 @@ client.on('messageCreate', async (msg) => {
 // --- PANNEAU: interactions boutons ---
 client.on('interactionCreate', async (i) => {
   if (!i.isButton()) return;
-  const [kind, targetUserId] = i.customId.split(':'); // ex: goal_for:123, minp1:123, undo:123
+  const [kind, targetUserId] = i.customId.split(':');
   if (targetUserId !== i.user.id) {
-    return i.reply({ content: "Ce panneau ne t’est pas assigné. Utilise `!panel` pour le tien 😉", ephemeral: true });
+    return i.reply({ content: "Ce panneau ne t'est pas assigné. Utilise `!panel` pour le tien 😉", ephemeral: true });
   }
   const guildId = i.guildId;
   const m = getMatch(guildId, i.user.id);
@@ -670,7 +835,11 @@ client.on('interactionCreate', async (i) => {
       // save
       m.hist.push({ prev: { ...m } });
       if (kind === 'goal_for') m.for++; else m.against++;
-      const text = buildGoalText(m.team, m.opp, m.for, m.against, m.minute, null);
+      
+      // FIX: Utiliser buildGoalAnnouncement au lieu de buildGoalText
+      const cmd = kind === 'goal_for' ? '!g' : '!gc';
+      const text = buildGoalAnnouncement(m.team, m.opp, m.for, m.against, m.minute, null, cmd);
+      
       await enqueueJingleAndTTS(guildId, text);
       await updateBoardMessage(i);
       return i.deferUpdate();
