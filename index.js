@@ -47,7 +47,9 @@ console.log(generateDependencyReport());
 const TOKEN = process.env.DISCORD_TOKEN;
 const PREFIX = '!';
 const ASSETS_DIR = 'assets';
-const JINGLE_PATH = path.join(ASSETS_DIR, 'but.mp3'); // place ton jingle ici
+const JINGLE_PATH = path.join(ASSETS_DIR, 'but.mp3');
+const UCL_ANTHEM_PATH = path.join(ASSETS_DIR, 'ucl_anthem.mp3'); // Hymne Ligue des Champions
+const EUROPA_ANTHEM_PATH = path.join(ASSETS_DIR, 'europa_anthem.mp3'); // Hymne Europa League
 
 // --- ÉTATS ---
 // Audio par serveur
@@ -549,6 +551,21 @@ async function enqueueJingleAndTTS(guildId, text) {
   enqueue(guildId, [j, t]);
 }
 
+// Fonction pour jouer un fichier audio simple
+async function playAudioFile(guildId, filePath) {
+  const st = getAudioState(guildId);
+  if (!st?.connection) return false;
+  
+  try {
+    const resource = createAudioResource(filePath);
+    enqueue(guildId, [resource]);
+    return true;
+  } catch (error) {
+    console.error(`[AUDIO] Erreur lecture ${filePath}:`, error);
+    return false;
+  }
+}
+
 // --- CLIENT ---
 const client = new Client({
   intents: [
@@ -588,7 +605,38 @@ client.on('messageCreate', async (msg) => {
 
     const [cmd, ...rest] = content.split(/\s+/);
     const guildId = msg.guildId;
-    const st = getAudioState(guildId); // ✅ FIX: définir st ici
+    const st = getAudioState(guildId);
+
+    // ===== Hymnes UEFA =====
+    if (cmd === '!ldc') {
+      if (!st?.connection) {
+        await msg.reply("Je ne suis pas connecté. Lance d'abord `!multiplex`.");
+        return;
+      }
+      
+      const success = await playAudioFile(guildId, UCL_ANTHEM_PATH);
+      if (success) {
+        await msg.react('🎵');
+      } else {
+        await msg.reply("❌ Fichier `ucl_anthem.mp3` introuvable dans le dossier assets.");
+      }
+      return;
+    }
+
+    if (cmd === '!eur') {
+      if (!st?.connection) {
+        await msg.reply("Je ne suis pas connecté. Lance d'abord `!multiplex`.");
+        return;
+      }
+      
+      const success = await playAudioFile(guildId, EUROPA_ANTHEM_PATH);
+      if (success) {
+        await msg.react('🎵');
+      } else {
+        await msg.reply("❌ Fichier `europa_anthem.mp3` introuvable dans le dossier assets.");
+      }
+      return;
+    }
 
     // ====== Persistance profil ======
     if (cmd === '!whoami') {

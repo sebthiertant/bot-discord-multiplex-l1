@@ -1,4 +1,4 @@
-# Guide d’utilisation – Bot Multiplex L1
+# Guide d'utilisation – Bot Multiplex L1
 
 > À épingler dans Discord et à mettre dans le README.
 
@@ -33,11 +33,20 @@
 
 ---
 
+## Hymnes UEFA
+
+- `!ldc`  
+  Joue l'hymne de la Ligue des Champions
+- `!eur`  
+  Joue l'hymne de l'Europa League
+
+---
+
 ## Panneau de boutons (recommandé)
 
 - `!panel`  
-  Affiche un panneau personnel (Goal+, Goal-, +1’, +5’, Undo, HT, FT)  
-  Les clics n’agissent que pour l’utilisateur qui a généré le panneau.
+  Affiche un panneau personnel (Goal+, Goal-, +1', +5', Undo, HT, FT)  
+  Les clics n'agissent que pour l'utilisateur qui a généré le panneau.
 
 ---
 
