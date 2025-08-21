@@ -11,6 +11,8 @@ const store = require('./store');
 const ffmpegPath = require('ffmpeg-static');
 process.env.FFMPEG_PATH = ffmpegPath;
 
+const { generateQuestions } = require('./press');
+
 const fs = require('fs');
 const path = require('path');
 const {
@@ -74,14 +76,14 @@ function getGuildDay(guildId) {
 }
 
 function resetMatch(m, { keepTeam = true, keepOpp = true } = {}) {
-  m.for = 0;
-  m.against = 0;
-  m.minute = 0;
-  delete m.minuteLabel;
+  m.for = m.against = 0;
+  m.minute = 0; delete m.minuteLabel;
   m.hist = [];
   m.status = 'IDLE';
+  m.scorersFor = []; m.scorersAgainst = [];
   if (!keepOpp) m.opp = null;
 }
+
 
 async function ensureBoardMessage(client, guildId, channel) {
   const payload = renderBoard(guildId, client);
@@ -158,7 +160,7 @@ function getMatch(guildId, userId) {
   // 1) Récupère ou crée l’état du match pour l’utilisateur
   let m = g.matches.get(userId);
   if (!m) {
-    m = { team: null, opp: null, for: 0, against: 0, minute: 0, status: 'IDLE', hist: [] };
+    m = { team: null, opp: null, for: 0, against: 0, minute: 0, status: 'IDLE', hist: [], scorersFor: [], scorersAgainst: [] };
     g.matches.set(userId, m);
   }
 
@@ -177,31 +179,31 @@ function fmtMinDisplay(labelOrNum) {
   return (labelOrNum || labelOrNum === 0) ? `${labelOrNum}’` : '';
 }
 
-function renderBoard(guildId, client){
+function renderBoard(guildId, client) {
   const g = getGuildDay(guildId);
   const lines = [];
-  for (const [uid, m] of g.matches.entries()){
-    const user  = client.users.cache.get(uid);
-    const tag   = user ? user.username : uid;
-    const head  = m.team || "—";
-    const opp   = m.opp  || "—";
+  for (const [uid, m] of g.matches.entries()) {
+    const user = client.users.cache.get(uid);
+    const tag = user ? user.username : uid;
+    const head = m.team || "—";
+    const opp = m.opp || "—";
 
     const badge =
-      m.status === 'H2'   ? '🟢' :
-      m.status === 'LIVE' ? '🟢' :
-      m.status === 'HT'   ? '🟡' :
-      m.status === 'FT'   ? '🔴' : '⚪';
+      m.status === 'H2' ? '🟢' :
+        m.status === 'LIVE' ? '🟢' :
+          m.status === 'HT' ? '🟡' :
+            m.status === 'FT' ? '🔴' : '⚪';
 
     const phase =
-      m.status === 'H2'   ? '2e MT' :
-      m.status === 'LIVE' ? 'LIVE'  :
-      m.status === 'HT'   ? 'MT'    :
-      m.status === 'FT'   ? 'FIN'   : '';
+      m.status === 'H2' ? '2e MT' :
+        m.status === 'LIVE' ? 'LIVE' :
+          m.status === 'HT' ? 'MT' :
+            m.status === 'FT' ? 'FIN' : '';
 
     const min = fmtMinDisplay(m.minuteLabel ?? m.minute);
     lines.push(`**${tag}** — ${head} ${m.for}-${m.against} ${opp} ${min} ${badge} ${phase}`.trim());
   }
-  return { content: lines.join("\n") || "Aucun match.", allowedMentions:{parse:[]} };
+  return { content: lines.join("\n") || "Aucun match.", allowedMentions: { parse: [] } };
 }
 
 function buildTtsSentence(clubRaw, scorerRaw) {
@@ -254,14 +256,14 @@ function buildGoalAnnouncement(team, opp, f, a, minute, scorer, cmd) {
   const concedingTeam = isFor ? opp : team;
   const scoringTeamScore = isFor ? f : a;
   const concedingTeamScore = isFor ? a : f;
-  
+
   // Cas spéciaux d'humiliation
   if (concedingTeamScore === 0 && scoringTeamScore === 5) {
     // MANITA (5-0)
     const opener = weightedRandom(OPENERS);
     const template = weightedRandom(HUMILIATION_TEMPLATES.manita);
     let base = `${opener} ${template}`;
-    
+
     // Remplacer les placeholders
     base = base.replace('{team}', scoringTeam || 'l\'équipe qui marque');
     base = base.replace('{conceding_team}', concedingTeam || 'l\'équipe adverse');
@@ -271,39 +273,39 @@ function buildGoalAnnouncement(team, opp, f, a, minute, scorer, cmd) {
       // Enlever la partie scorer si pas de buteur
       base = base.split('!')[0] + ' !'; // Garde juste la première partie
     }
-    
+
     console.log(`[DEBUG] Pattern sélectionné: MANITA, isFor: ${isFor}, scorer: ${scorer || 'none'}`);
-    
+
     // Lignes info
     const scoreLine = (team && opp) ? `${team} ${f}, ${opp} ${a}.` : '';
     const minuteLine = minute ? `${minute}e minute.` : '';
-    
+
     return [base, scoreLine, minuteLine]
       .filter(Boolean)
       .join(' ')
       .replace(/\s+/g, ' ')
       .trim();
   }
-  
+
   if (concedingTeamScore === 0 && scoringTeamScore === 10) {
     // FANNI (10-0)
     const opener = weightedRandom(OPENERS);
     const template = weightedRandom(HUMILIATION_TEMPLATES.fanni);
     let base = `${opener} ${template}`;
-    
+
     // Remplacer les placeholders
     base = base.replace('{conceding_team}', concedingTeam || 'l\'équipe qui encaisse');
     if (scorer) {
       // Pour le fanni, on peut ajouter le buteur à la fin
       base += ` Et c'est ${scorer} qui porte le coup de grâce !`;
     }
-    
+
     console.log(`[DEBUG] Pattern sélectionné: FANNI, isFor: ${isFor}, scorer: ${scorer || 'none'}`);
-    
+
     // Lignes info
     const scoreLine = (team && opp) ? `${team} ${f}, ${opp} ${a}.` : '';
     const minuteLine = minute ? `${minute}e minute.` : '';
-    
+
     return [base, scoreLine, minuteLine]
       .filter(Boolean)
       .join(' ')
@@ -315,23 +317,23 @@ function buildGoalAnnouncement(team, opp, f, a, minute, scorer, cmd) {
   // Sélectionner un pattern d'annonce de façon pondérée
   const patternObj = weightedRandom(ANNOUNCEMENT_PATTERNS);
   const pattern = patternObj.type;
-  
+
   let base = '';
-  
+
   switch (pattern) {
     case 'classic': {
       // Pattern classique : Opener + Club + Scorer
       base = buildTtsSentence(isFor ? team : opp, scorer);
       break;
     }
-    
+
     case 'scorer_first': {
       // Pattern buteur en premier : Opener + Scorer + Club
       if (scorer && team && opp) {
         const opener = weightedRandom(OPENERS);
         const scorerTemplate = weightedRandom(SCORER_FIRST_TEMPLATES);
         const clubName = isFor ? team : opp;
-        
+
         base = `${opener} ${scorerTemplate.replace('{scorer}', scorer)} pour ${clubName} !`;
       } else {
         // Fallback vers pattern classique si pas assez d'infos
@@ -339,13 +341,13 @@ function buildGoalAnnouncement(team, opp, f, a, minute, scorer, cmd) {
       }
       break;
     }
-    
+
     case 'scorer_only': {
       // Pattern sans club : focus sur le buteur
       if (scorer) {
         const opener = weightedRandom(OPENERS);
         const scorerTemplate = weightedRandom(SCORER_TEMPLATES);
-        
+
         base = `${opener} ${scorerTemplate.replace('{scorer}', scorer)}`;
       } else {
         // Fallback : juste l'opener + "But !"
@@ -354,7 +356,7 @@ function buildGoalAnnouncement(team, opp, f, a, minute, scorer, cmd) {
       }
       break;
     }
-    
+
     case 'conceding': {
       // Pattern défense qui craque
       if (team && opp) {
@@ -362,14 +364,14 @@ function buildGoalAnnouncement(team, opp, f, a, minute, scorer, cmd) {
         const concedingTeam = isFor ? opp : team;
         const concedingPhrase = getConcedingTeamPhrase(concedingTeam);
         const concedingOpener = weightedRandom(CONCEDING_OPENERS);
-        
+
         base = `${concedingOpener} ${concedingPhrase}.`;
-        
+
         if (scorer) {
           // Utiliser le bon template selon le contexte du score
           const scoringTeamScore = isFor ? f : a;
           const concedingTeamScore = isFor ? a : f;
-          
+
           // Si l'équipe qui marque prend 2+ buts d'avance, utiliser les finishing templates
           if (scoringTeamScore - concedingTeamScore >= 2) {
             const finishingTemplate = weightedRandom(FINISHING_SCORER_TEMPLATES);
@@ -386,7 +388,7 @@ function buildGoalAnnouncement(team, opp, f, a, minute, scorer, cmd) {
       }
       break;
     }
-    
+
     case 'minimal': {
       // Pattern minimaliste : très direct
       if (scorer) {
@@ -398,7 +400,7 @@ function buildGoalAnnouncement(team, opp, f, a, minute, scorer, cmd) {
       }
       break;
     }
-    
+
     default: {
       // Fallback sécurisé
       base = buildTtsSentence(isFor ? team : opp, scorer);
@@ -434,7 +436,7 @@ function buildGoalAnnouncement(team, opp, f, a, minute, scorer, cmd) {
       else statusLine = '';
     }
   }
-  
+
   return [base, scoreLine, statusLine, minuteLine]
     .filter(Boolean)
     .join(' ')
@@ -555,7 +557,7 @@ async function enqueueJingleAndTTS(guildId, text) {
 async function playAudioFile(guildId, filePath) {
   const st = getAudioState(guildId);
   if (!st?.connection) return false;
-  
+
   try {
     const resource = createAudioResource(filePath);
     enqueue(guildId, [resource]);
@@ -605,6 +607,7 @@ client.on('messageCreate', async (msg) => {
 
     const [cmd, ...rest] = content.split(/\s+/);
     const guildId = msg.guildId;
+    const userId = msg.author.id;
     const st = getAudioState(guildId);
 
     // ===== Hymnes UEFA =====
@@ -613,7 +616,7 @@ client.on('messageCreate', async (msg) => {
         await msg.reply("Je ne suis pas connecté. Lance d'abord `!multiplex`.");
         return;
       }
-      
+
       const success = await playAudioFile(guildId, UCL_ANTHEM_PATH);
       if (success) {
         await msg.react('🎵');
@@ -628,7 +631,7 @@ client.on('messageCreate', async (msg) => {
         await msg.reply("Je ne suis pas connecté. Lance d'abord `!multiplex`.");
         return;
       }
-      
+
       const success = await playAudioFile(guildId, EUROPA_ANTHEM_PATH);
       if (success) {
         await msg.react('🎵');
@@ -741,7 +744,43 @@ client.on('messageCreate', async (msg) => {
       m.status = 'FIN';
       m.minute = 90;
       m.minuteLabel = '90';
-      await msg.reply('🔴 Fin du match.');
+      
+      // NOUVEAU : Sauvegarder automatiquement le match dans l'historique
+      if (m.team && m.opp) {
+        const coach = store.getCoachProfile(guildId, userId);
+        const competition = coach?.currentCompetition || 'Ligue 1';
+        
+        // NOUVEAU : Auto-incrémentation pour Ligue 1
+        let matchday = null;
+        if (competition === 'Ligue 1') {
+          matchday = store.getNextMatchday(guildId, userId);
+          // Mettre à jour le profil coach avec la nouvelle journée
+          store.updateCoachProfile(guildId, userId, { currentMatchday: matchday });
+        } else {
+          // Pour les autres compétitions, utiliser la journée définie manuellement
+          matchday = coach?.currentMatchday || null;
+        }
+        
+        const matchData = {
+          team: m.team,
+          opponent: m.opp,
+          scoreFor: m.for,
+          scoreAgainst: m.against,
+          competition: competition,
+          matchday: matchday,
+          scorersFor: m.scorersFor || [],
+          scorersAgainst: m.scorersAgainst || []
+        };
+        
+        store.addMatchToHistory(guildId, userId, matchData);
+        
+        // Message informatif sur l'auto-incrémentation
+        const autoInfo = competition === 'Ligue 1' && matchday ? ` (J${matchday} auto-assignée)` : '';
+        await msg.reply(`🔴 Fin du match. (Ajouté automatiquement à l'historique${autoInfo})`);
+      } else {
+        await msg.reply('🔴 Fin du match. (Ajouté automatiquement à l\'historique)');
+      }
+      
       await updateBoardMsg(client, guildId);
       return;
     }
@@ -767,7 +806,7 @@ client.on('messageCreate', async (msg) => {
     if (cmd === '!g' || cmd === '!gc') {
       const st = getAudioState(guildId);
       if (!st?.connection) {
-        await msg.reply("Je ne suis pas connecté. Lance d’abord `!multiplex`.");
+        await msg.reply("Je ne suis pas connecté. Lance d'abord `!multiplex`.");
         return;
       }
       // !g [minute] [buteur…]
@@ -777,13 +816,21 @@ client.on('messageCreate', async (msg) => {
       if (rest.length) scorer = rest.join(' ');
 
       m.hist.push({ prev: { ...m } });
-      if (cmd === '!g') m.for++; else m.against++;
+
+      // Mise à jour score et tracking des buteurs pour conférence de presse
+      if (cmd === '!g') {
+        m.for++;
+        if (scorer) m.scorersFor.push(`${scorer}${m.minute ? ` (${m.minute}')` : ''}`);
+      } else {
+        m.against++;
+        if (scorer) m.scorersAgainst.push(`${scorer}${m.minute ? ` (${m.minute}')` : ''}`);
+      }
 
       const text = buildGoalAnnouncement(m.team, m.opp, m.for, m.against, m.minute, scorer, cmd);
       await enqueueJingleAndTTS(guildId, text);
 
       await msg.reply(
-        `${cmd === '!g' ? '⚽' : '🥅'} ${m.team || '—'} ${m.for}-${m.against} ${m.opp || '—'} ${m.minute ? `${m.minute}’` : ''}`
+        `${cmd === '!g' ? '⚽' : '🥅'} ${m.team || '—'} ${m.for}-${m.against} ${m.opp || '—'} ${m.minute ? `${m.minute}'` : ''}`
           .replace(/\s+/g, ' ').trim()
       );
       await updateBoardMsg(client, guildId);
@@ -826,7 +873,67 @@ client.on('messageCreate', async (msg) => {
       return;
     }
 
+    if (cmd === '!conf') {
+      const n = rest[0] ? parseInt(rest[0], 10) : undefined;
+      
+      // NOUVEAU : Utiliser le dernier match de l'historique comme contexte principal
+      const coach = store.getCoachProfile(guildId, userId);
+      const recentMatches = store.getMatchHistory(guildId, userId, 5);
+      
+      if (recentMatches.length === 0) {
+        return void msg.reply("Aucun match dans l'historique. Termine un match avec `!fin` pour générer une conférence de presse.");
+      }
+      
+      // Le dernier match (le plus récent) devient le contexte principal
+      const lastMatch = recentMatches[0];
+      
+      const ctx = {
+        coach: coach?.name || msg.member?.displayName || msg.author.username,
+        team: lastMatch.team || 'votre équipe', 
+        opp: lastMatch.opponent || 'l\'adversaire',
+        for: lastMatch.scoreFor || 0, 
+        against: lastMatch.scoreAgainst || 0,
+        scorersFor: lastMatch.scorersFor || [], 
+        scorersAgainst: lastMatch.scorersAgainst || [],
+        phase: lastMatch.competition || 'Ligue 1',
+        matchday: lastMatch.matchday,
+        // Contexte étendu du coach
+        nationality: coach?.nationality,
+        age: coach?.age,
+        currentSeason: coach?.currentSeason,
+        // CORRIGÉ : Historique SANS le match actuel (on enlève le premier élément)
+        recentMatches: recentMatches.slice(1).map(match => ({
+          opponent: match.opponent,
+          result: `${match.scoreFor}-${match.scoreAgainst}`,
+          competition: match.competition,
+          matchday: match.matchday,
+          scorersFor: match.scorersFor || [],
+          scorersAgainst: match.scorersAgainst || [],
+          date: match.date
+        }))
+      };
 
+      const qs = await generateQuestions(ctx, n);
+
+      // 1) poster les questions
+      const lines = qs.map((q, i) => `**Q${i + 1}.** ${q}`).join('\n');
+      const matchInfo = `${ctx.team} ${ctx.for}-${ctx.against} ${ctx.opp}${ctx.matchday ? ` (J${ctx.matchday})` : ''}`;
+      await msg.channel.send({ content: `🎙️ **Conférence de presse** — ${matchInfo}\n${lines}` });
+
+      // 2) les lire au vocal si connecté
+      const st = getAudioState(guildId);
+      if (st?.connection) {
+        for (const q of qs) {
+          const ttsPath = path.join(ASSETS_DIR, `press_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
+          await synthToFile(q, ttsPath, "fr-FR-HenriNeural");
+          const res = createAudioResource(ttsPath); res.metadata = { tempPath: ttsPath };
+          enqueue(guildId, [res]);
+        }
+      } else {
+        await msg.channel.send("🔈 (Pas dans un salon vocal, questions envoyées seulement en texte.)");
+      }
+      return;
+    }
 
     if (cmd === '!board') {
       const meta = store.getBoard(guildId);
@@ -859,6 +966,438 @@ client.on('messageCreate', async (msg) => {
       await msg.react('🎙️');
       return;
     }
+
+    // ====== NOUVELLES COMMANDES COACH PROFILE ======
+    
+    if (cmd === '!coach') {
+      const profile = store.getCoachProfile(guildId, userId);
+      if (!profile || Object.keys(profile).length === 0) {
+        return void msg.reply("Aucun profil coach configuré. Utilise `!coach-set nom <nom>` pour commencer.");
+      }
+      
+      const lines = [];
+      lines.push(`👤 **Profil Coach** — ${msg.author.username}`);
+      if (profile.name) lines.push(`Nom : ${profile.name}`);
+      if (profile.nationality) lines.push(`Nationalité : ${profile.nationality}`);
+      if (profile.age) lines.push(`Âge : ${profile.age} ans`);
+      if (profile.currentCompetition) lines.push(`Compétition actuelle : ${profile.currentCompetition}`);
+      if (profile.currentSeason) lines.push(`Saison : ${profile.currentSeason}`);
+      if (profile.currentMatchday) lines.push(`Journée actuelle : J${profile.currentMatchday}`);
+      
+      await msg.reply(lines.join('\n'));
+      return;
+    }
+
+    if (cmd === '!coach-set') {
+      if (rest.length < 2) {
+        return void msg.reply("Utilise : `!coach-set <propriété> <valeur>`\nPropriétés : nom, nationalité, age, compétition, saison, journée");
+      }
+      
+      const [prop, ...valueParts] = rest;
+      const value = valueParts.join(' ');
+      
+      const validProps = {
+        'nom': 'name',
+        'name': 'name',
+        'nationalité': 'nationality', 
+        'nationality': 'nationality',
+        'age': 'age',
+        'âge': 'age',
+        'compétition': 'currentCompetition',
+        'competition': 'currentCompetition',
+        'saison': 'currentSeason',
+        'season': 'currentSeason',
+        'journée': 'currentMatchday',
+        'journee': 'currentMatchday',
+        'matchday': 'currentMatchday',
+        'j': 'currentMatchday'
+      };
+      
+      const mappedProp = validProps[prop.toLowerCase()];
+      if (!mappedProp) {
+        return void msg.reply("Propriété inconnue. Utilise : nom, nationalité, age, compétition, saison, journée");
+      }
+      
+      const updates = {};
+      if (mappedProp === 'age') {
+        const age = parseInt(value, 10);
+        if (isNaN(age) || age < 16 || age > 99) {
+          return void msg.reply("L'âge doit être un nombre entre 16 et 99.");
+        }
+        updates[mappedProp] = age;
+      } else if (mappedProp === 'currentMatchday') {
+        const matchday = parseInt(value, 10);
+        if (isNaN(matchday) || matchday < 1 || matchday > 99) {
+          return void msg.reply("La journée doit être un nombre entre 1 et 99.");
+        }
+        updates[mappedProp] = matchday;
+      } else {
+        updates[mappedProp] = value;
+      }
+      
+      store.updateCoachProfile(guildId, userId, updates);
+      await msg.reply(`✅ ${prop} mis à jour : **${value}**`);
+      return;
+    }
+
+    // ====== NOUVELLES COMMANDES COMPÉTITION/JOURNÉE ======
+    
+    if (cmd === '!comp') {
+      if (rest.length === 0) {
+        // Afficher la compétition actuelle avec info sur l'auto-incrémentation
+        const coach = store.getCoachProfile(guildId, userId);
+        const current = coach?.currentCompetition || 'Ligue 1';
+        
+        if (current === 'Ligue 1') {
+          const nextMatchday = store.getNextMatchday(guildId, userId);
+          return void msg.reply(`🏆 Compétition actuelle : **${current}** (J${nextMatchday} auto-calculée)\n💡 Les journées s'incrémentent automatiquement en Ligue 1`);
+        } else {
+          const matchday = coach?.currentMatchday ? ` (J${coach.currentMatchday})` : '';
+          return void msg.reply(`🏆 Compétition actuelle : **${current}**${matchday}`);
+        }
+      }
+      
+      const competition = rest.join(' ').trim();
+      store.updateCoachProfile(guildId, userId, { currentCompetition: competition });
+      
+      // Message informatif sur l'auto-incrémentation
+      const autoInfo = competition === 'Ligue 1' ? '\n💡 Les journées s\'incrémentent automatiquement en Ligue 1' : '';
+      await msg.reply(`🏆 Compétition définie : **${competition}**${autoInfo}`);
+      return;
+    }
+
+    if (cmd === '!journee' || cmd === '!j') {
+      if (rest.length === 0) {
+        // Afficher la journée actuelle avec info auto-incrémentation
+        const coach = store.getCoachProfile(guildId, userId);
+        const competition = coach?.currentCompetition || 'Ligue 1';
+        
+        if (competition === 'Ligue 1') {
+          const nextMatchday = store.getNextMatchday(guildId, userId);
+          return void msg.reply(`📅 Prochaine journée Ligue 1 : **J${nextMatchday}** (auto-calculée)\n💡 Les journées s'incrémentent automatiquement en Ligue 1`);
+        } else {
+          const current = coach?.currentMatchday || 'Non définie';
+          const comp = coach?.currentCompetition ? ` (${coach.currentCompetition})` : '';
+          return void msg.reply(`📅 Journée actuelle : **J${current}**${comp}`);
+        }
+      }
+      
+      const matchday = parseInt(rest[0], 10);
+      if (isNaN(matchday) || matchday < 1 || matchday > 99) {
+        return void msg.reply("La journée doit être un nombre entre 1 et 99.");
+      }
+      
+      store.updateCoachProfile(guildId, userId, { currentMatchday: matchday });
+      await msg.reply(`📅 Journée définie : **J${matchday}**`);
+      return;
+    }
+
+    if (cmd === '!nextj') {
+      // Avancer à la journée suivante
+      const coach = store.getCoachProfile(guildId, userId);
+      const current = coach?.currentMatchday || 0;
+      const next = current + 1;
+      
+      if (next > 99) {
+        return void msg.reply("Journée maximum atteinte (99).");
+      }
+      
+      store.updateCoachProfile(guildId, userId, { currentMatchday: next });
+      await msg.reply(`📅 Passage à la journée suivante : **J${next}**`);
+      return;
+    }
+
+    if (cmd === '!season') {
+      if (rest.length === 0) {
+        // Afficher la saison actuelle
+        const coach = store.getCoachProfile(guildId, userId);
+        const current = coach?.currentSeason || 'Non définie';
+        return void msg.reply(`📆 Saison actuelle : **${current}**`);
+      }
+      
+      const season = rest.join(' ').trim();
+      store.updateCoachProfile(guildId, userId, { currentSeason: season });
+      await msg.reply(`📆 Saison définie : **${season}**`);
+      return;
+    }
+
+    // ====== COMMANDE SETUP RAPIDE ======
+    
+    if (cmd === '!setup') {
+      if (rest.length < 2) {
+        return void msg.reply("Utilise : `!setup <compétition> <journée> [saison]`\nExemple : `!setup \"Ligue 1\" 15 \"2024-2025\"`");
+      }
+      
+      const [competition, matchdayStr, ...seasonParts] = rest;
+      const matchday = parseInt(matchdayStr, 10);
+      
+      if (isNaN(matchday) || matchday < 1 || matchday > 99) {
+        return void msg.reply("La journée doit être un nombre entre 1 et 99.");
+      }
+      
+      const updates = {
+        currentCompetition: competition,
+        currentMatchday: matchday
+      };
+      
+      if (seasonParts.length > 0) {
+        updates.currentSeason = seasonParts.join(' ');
+      }
+      
+      store.updateCoachProfile(guildId, userId, updates);
+      
+      const seasonText = updates.currentSeason ? ` (${updates.currentSeason})` : '';
+      await msg.reply(`⚙️ Configuration mise à jour :\n🏆 Compétition : **${competition}**\n📅 Journée : **J${matchday}**${seasonText}`);
+      return;
+    }
+
+    if (cmd === '!match-add') {
+      // !match-add opponent score_for score_against [competition] [matchday]
+      if (rest.length < 3) {
+        return void msg.reply("Utilise : `!match-add <adversaire> <score_pour> <score_contre> [compétition] [journée]`");
+      }
+      
+      const [opponent, scoreForStr, scoreAgainstStr, competition, matchday] = rest;
+      const scoreFor = parseInt(scoreForStr, 10);
+      const scoreAgainst = parseInt(scoreAgainstStr, 10);
+      
+      if (isNaN(scoreFor) || isNaN(scoreAgainst)) {
+        return void msg.reply("Les scores doivent être des nombres valides.");
+      }
+      
+      const m = getMatch(guildId, userId);
+      const coach = store.getCoachProfile(guildId, userId);
+      const finalCompetition = competition || coach?.currentCompetition || 'Ligue 1';
+      
+      // NOUVEAU : Auto-incrémentation pour Ligue 1 si pas de journée spécifiée
+      let finalMatchday = null;
+      if (matchday) {
+        finalMatchday = parseInt(matchday, 10);
+      } else if (finalCompetition === 'Ligue 1') {
+        finalMatchday = store.getNextMatchday(guildId, userId);
+        // Mettre à jour le profil coach avec la nouvelle journée
+        store.updateCoachProfile(guildId, userId, { currentMatchday: finalMatchday });
+      } else {
+        finalMatchday = coach?.currentMatchday || null;
+      }
+      
+      const matchData = {
+        team: m.team,
+        opponent,
+        scoreFor,
+        scoreAgainst,
+        competition: finalCompetition,
+        matchday: finalMatchday,
+        scorersFor: [],
+        scorersAgainst: []
+      };
+      
+      const matchId = store.addMatchToHistory(guildId, userId, matchData);
+      const autoInfo = finalCompetition === 'Ligue 1' && finalMatchday && !matchday ? ` (J${finalMatchday} auto-assignée)` : '';
+      await msg.reply(`✅ Match ajouté à l'historique (ID: ${matchId})${autoInfo}`);
+      return;
+    }
+
+    if (cmd === '!history') {
+      const limit = rest[0] ? Math.min(parseInt(rest[0], 10) || 5, 20) : 5;
+      const matches = store.getMatchHistory(guildId, userId, limit);
+      
+      if (matches.length === 0) {
+        return void msg.reply("Aucun match dans l'historique. Les matchs terminés avec `!fin` y sont automatiquement ajoutés.");
+      }
+      
+      const lines = [`📋 **Historique** — ${matches.length} dernier(s) match(s)`];
+      matches.forEach((match, i) => {
+        const result = `${match.scoreFor || 0}-${match.scoreAgainst || 0}`;
+        const vs = match.opponent || '?';
+        const comp = match.competition ? ` (${match.competition})` : '';
+        const day = match.matchday ? ` J${match.matchday}` : '';
+        
+        lines.push(`${i + 1}. ${match.team || '?'} ${result} ${vs}${comp}${day}`);
+      });
+      
+      await msg.reply(lines.join('\n'));
+      return;
+    }
+
+    if (cmd === '!history-ids') {
+      const limit = rest[0] ? Math.min(parseInt(rest[0], 10) || 10, 20) : 10;
+      const matches = store.getMatchHistory(guildId, userId, limit);
+      
+      if (matches.length === 0) {
+        return void msg.reply("Aucun match dans l'historique.");
+      }
+      
+      const lines = [`📋 **Historique avec IDs** — ${matches.length} match(s)`];
+      matches.forEach((match, i) => {
+        const result = `${match.scoreFor || 0}-${match.scoreAgainst || 0}`;
+        const vs = match.opponent || '?';
+        const comp = match.competition ? ` (${match.competition})` : '';
+        const day = match.matchday ? ` J${match.matchday}` : '';
+        
+        lines.push(`**ID ${match.id}** — ${match.team || '?'} ${result} ${vs}${comp}${day}`);
+      });
+      
+      lines.push('');
+      lines.push('💡 Utilise `!match-edit <ID> <propriété> <valeur>` pour éditer');
+      lines.push('💡 Propriétés : opponent, scoreFor, scoreAgainst, competition, matchday');
+      
+      await msg.reply(lines.join('\n'));
+      return;
+    }
+
+    if (cmd === '!match-edit') {
+      // !match-edit ID property value
+      if (rest.length < 3) {
+        return void msg.reply("Utilise : `!match-edit <ID> <propriété> <valeur>`");
+      }
+      
+      const [matchIdStr, property, ...valueParts] = rest;
+      const matchId = parseInt(matchIdStr, 10);
+      const value = valueParts.join(' ');
+      
+      if (isNaN(matchId)) {
+        return void msg.reply("L'ID doit être un nombre. Utilise `!history-ids` pour voir les IDs.");
+      }
+      
+      const validProps = {
+        'opponent': 'opponent',
+        'adversaire': 'opponent',
+        'scoreFor': 'scoreFor',
+        'scorefor': 'scoreFor',
+        'score_pour': 'scoreFor',
+        'scoreAgainst': 'scoreAgainst',
+        'scoreagainst': 'scoreAgainst',
+        'score_contre': 'scoreAgainst',
+        'competition': 'competition',
+        'compétition': 'competition',
+        'comp': 'competition',
+        'matchday': 'matchday',
+        'journée': 'matchday',
+        'journee': 'matchday',
+        'j': 'matchday'
+      };
+      
+      const mappedProp = validProps[property.toLowerCase()];
+      if (!mappedProp) {
+        return void msg.reply("Propriété inconnue. Propriétés disponibles : opponent, scoreFor, scoreAgainst, competition, matchday");
+      }
+      
+      const updates = {};
+      
+      if (mappedProp === 'scoreFor' || mappedProp === 'scoreAgainst') {
+        const score = parseInt(value, 10);
+        if (isNaN(score) || score < 0) {
+          return void msg.reply("Le score doit être un nombre positif ou nul.");
+        }
+        updates[mappedProp] = score;
+      } else if (mappedProp === 'matchday') {
+        if (value.toLowerCase() === 'null' || value === '') {
+          updates[mappedProp] = null;
+        } else {
+          const matchday = parseInt(value, 10);
+          if (isNaN(matchday) || matchday < 1 || matchday > 99) {
+            return void msg.reply("La journée doit être un nombre entre 1 et 99, ou 'null' pour supprimer.");
+          }
+          updates[mappedProp] = matchday;
+        }
+      } else {
+        updates[mappedProp] = value;
+      }
+      
+      const success = store.updateMatchInHistory(guildId, userId, matchId, updates);
+      
+      if (success) {
+        await msg.reply(`✅ Match ID ${matchId} mis à jour : **${property}** → **${value}**`);
+      } else {
+        await msg.reply(`❌ Match ID ${matchId} introuvable. Utilise \`!history-ids\` pour voir les IDs disponibles.`);
+      }
+      return;
+    }
+
+    if (cmd === '!match-delete') {
+      if (rest.length === 0) {
+        return void msg.reply("Utilise : `!match-delete <ID>`\nUtilise `!history-ids` pour voir les IDs disponibles.");
+      }
+      
+      const matchIdStr = rest[0];
+      const matchId = parseInt(matchIdStr, 10);
+      
+      if (isNaN(matchId)) {
+        return void msg.reply("L'ID doit être un nombre. Utilise `!history-ids` pour voir les IDs.");
+      }
+      
+      const success = store.deleteMatchFromHistory(guildId, userId, matchId);
+      
+      if (success) {
+        await msg.reply(`✅ Match ID ${matchId} supprimé de l'historique.`);
+      } else {
+        await msg.reply(`❌ Match ID ${matchId} introuvable. Utilise \`!history-ids\` pour voir les IDs disponibles.`);
+      }
+      return;
+    }
+
+    if (cmd === '!scorers') {
+      const limit = rest[0] ? Math.min(parseInt(rest[0], 10) || 10, 20) : 10;
+      const matches = store.getMatchHistory(guildId, userId, 100); // Récupérer plus de matchs pour les stats
+      
+      if (matches.length === 0) {
+        return void msg.reply("Aucun match dans l'historique pour calculer les statistiques des buteurs.");
+      }
+      
+      // Agrégation des buteurs
+      const scorerStats = {};
+      
+      matches.forEach(match => {
+        if (Array.isArray(match.scorersFor)) {
+          match.scorersFor.forEach(scorer => {
+            // Extraire le nom du buteur (enlever la minute)
+            const scorerName = String(scorer).split(' (')[0].trim();
+            if (scorerName) {
+              if (!scorerStats[scorerName]) {
+                scorerStats[scorerName] = { goals: 0, matches: new Set() };
+              }
+              scorerStats[scorerName].goals++;
+              scorerStats[scorerName].matches.add(match.id);
+            }
+          });
+        }
+      });
+      
+      if (Object.keys(scorerStats).length === 0) {
+        return void msg.reply("Aucun buteur trouvé dans l'historique.");
+      }
+      
+      // Trier par nombre de buts décroissant
+      const sortedScorers = Object.entries(scorerStats)
+        .map(([name, stats]) => ({
+          name,
+          goals: stats.goals,
+          matches: stats.matches.size
+        }))
+        .sort((a, b) => b.goals - a.goals)
+        .slice(0, limit);
+      
+      const lines = [`⚽ **Top ${Math.min(limit, sortedScorers.length)} des buteurs** — ${matches.length} match(s) analysés`];
+      
+      sortedScorers.forEach((scorer, i) => {
+        const rank = i + 1;
+        const emoji = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
+        const goalText = scorer.goals > 1 ? 'buts' : 'but';
+        const matchText = scorer.matches > 1 ? 'matchs' : 'match';
+        
+        lines.push(`${emoji} **${scorer.name}** — ${scorer.goals} ${goalText} (${scorer.matches} ${matchText})`);
+      });
+      
+      if (sortedScorers.length === 0) {
+        lines.push('Aucun buteur trouvé.');
+      }
+      
+      await msg.reply(lines.join('\n'));
+      return;
+    }
+
+    // ...existing code...
   } catch (e) {
     console.error('messageCreate error:', e);
     try { await msg.reply("Oups, une erreur est survenue."); } catch { }
@@ -883,11 +1422,11 @@ client.on('interactionCreate', async (i) => {
       // save
       m.hist.push({ prev: { ...m } });
       if (kind === 'goal_for') m.for++; else m.against++;
-      
+
       // FIX: Utiliser buildGoalAnnouncement au lieu de buildGoalText
       const cmd = kind === 'goal_for' ? '!g' : '!gc';
       const text = buildGoalAnnouncement(m.team, m.opp, m.for, m.against, m.minute, null, cmd);
-      
+
       await enqueueJingleAndTTS(guildId, text);
       await updateBoardMessage(i);
       return i.deferUpdate();
@@ -912,19 +1451,4 @@ async function updateBoardMessage(interaction) {
     const msg = await interaction.channel.messages.fetch(g.boardMsgId);
     await msg.edit(renderBoard(interaction.guildId, interaction.client));
   } catch { }
-}
-
-function makePanelRows(userId) {
-  const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`goal_for:${userId}`).setStyle(ButtonStyle.Success).setLabel('Goal + ⚽'),
-    new ButtonBuilder().setCustomId(`goal_against:${userId}`).setStyle(ButtonStyle.Danger).setLabel('Goal - 🥅'),
-    new ButtonBuilder().setCustomId(`undo:${userId}`).setStyle(ButtonStyle.Secondary).setLabel('Undo ↩️'),
-  );
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`minp1:${userId}`).setStyle(ButtonStyle.Primary).setLabel('+1’ ⏱️'),
-    new ButtonBuilder().setCustomId(`minp5:${userId}`).setStyle(ButtonStyle.Primary).setLabel('+5’ ⏱️'),
-    new ButtonBuilder().setCustomId(`mt:${userId}`).setStyle(ButtonStyle.Secondary).setLabel('MT 🟡'),
-    new ButtonBuilder().setCustomId(`ft:${userId}`).setStyle(ButtonStyle.Secondary).setLabel('FIN 🔴'),
-  );
-  return [row1, row2];
 }
