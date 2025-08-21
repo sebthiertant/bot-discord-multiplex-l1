@@ -15,6 +15,7 @@ Mémorise le club de chaque joueur + profil coach + historique des matchs (par s
 - Audio : jingle MP3 + TTS Azure (voix FR, ton "excited", paramètres ajustables).
 - Multiplex : le bot rejoint un salon vocal et y reste tant qu'il y a des humains.
 - Hymnes UEFA : `!ldc` (Ligue des Champions) et `!eur` (Europa League).
+- **🆕 Annonces mercato** : Style Fabrizio Romano avec `!mercato`.
 - Suivi léger (sans intégration FM) :
   - score, minute, buteur, adversaire, statuts (LIVE, MT, 2e MT, FIN).
   - annonces vocales variées (openers, variantes par club, modèles buteur).
@@ -224,6 +225,19 @@ Vous devriez voir :
 
 ### Conférences de presse
 - `!conf [nombre_questions]` → génère des questions de conférence de presse contextuelles (2 par défaut)
+
+### Annonces Mercato (Style Fabrizio Romano)
+- `!mercato <montant_millions> <club_origine> <joueur>` → annonce de transfert vers ton club
+
+**Exemples :**
+```
+!mercato 180 "Paris Saint-Germain" "Kylian Mbappé"
+!mercato 150 "Manchester City" "Erling Haaland"
+!mercato 80 Juventus "Paulo Dybala"
+!mercato 0 "Paris Saint-Germain" "Lionel Messi"  # Transfert libre
+```
+
+L'annonce sera lue avec une voix masculine à l'accent italien en anglais, avec des pauses dramatiques sur "HERE WE GO".
 
 ### Exemples complets
 

@@ -277,10 +277,26 @@ Les questions sont lues automatiquement au vocal si le bot est connecté.
 
 ---
 
-## Astuces
+## Annonces Mercato
 
-- Ton club reste mémorisé entre les sessions
-- L'historique permet des conférences de presse plus riches
-- Les journées Ligue 1 s'incrémentent automatiquement
-- Utilise `!board` pour voir tous les matchs en cours sur le serveur
-- Les statistiques de buteurs se calculent sur tout l'historique
+### Style Fabrizio Romano
+
+- `!mercato <montant_millions> <club_origine> <joueur>`  
+  Annonce de transfert vers ton club avec style Fabrizio Romano
+
+**Exemples :**
+```
+!mercato 180 "Paris Saint-Germain" "Kylian Mbappé"
+!mercato 150 "Manchester City" "Erling Haaland"
+!mercato 0 "Paris Saint-Germain" "Lionel Messi"  # Transfert libre
+!mercato 15 Marseille "Adrien Rabiot"
+```
+
+**Format de l'annonce :**
+- Voix masculine avec accent italien
+- "BREAKING NEWS"
+- "[Joueur] to [Ton Club] : HERE WE GO"
+- "Deal done and sealed for [X] million euros from [Club origine]"
+- "HERE WE GO" (avec pauses dramatiques)
+
+**Prérequis :** Avoir défini ton club avec `!me <club>` et être connecté au vocal`
