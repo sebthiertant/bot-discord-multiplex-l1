@@ -37,6 +37,7 @@ const {
 } = require('@discordjs/voice');
 
 const { synthToFile } = require('./tts.js');
+const { generateMercatoAnnouncement, buildMercatoDisplayText } = require('./mercato.js');
 
 // --- TEXTE TTS IMPORTS (keep only these, remove duplicates) ---
 const { CLUB_VARIANTS, CONCEDING_TEAM_PHRASES } = require('./clubs.js');
@@ -1397,7 +1398,84 @@ client.on('messageCreate', async (msg) => {
       return;
     }
 
-    // ...existing code...
+    // ===== NOUVELLE COMMANDE MERCATO =====
+    if (cmd === '!mercato') {
+      if (!st?.connection) {
+        await msg.reply("Je ne suis pas connecté. Lance d'abord `!multiplex`.");
+        return;
+      }
+
+      if (rest.length < 3) {
+        await msg.reply("Utilise : `!mercato <montant_millions> <club_origine> <joueur>`\nExemple : `!mercato 180 \"Paris Saint-Germain\" \"Kylian Mbappé\"`");
+        return;
+      }
+
+      // Récupérer le club de l'utilisateur
+      const m = getMatch(guildId, userId);
+      const userClub = m.team || store.getTeam(guildId, userId);
+      
+      if (!userClub) {
+        await msg.reply("Définis d'abord ton club avec `!me <club>` avant d'annoncer un transfert !");
+        return;
+      }
+
+      // NOUVEAU ORDRE : montant, club origine, puis joueur
+      const [amountStr, fromClub, ...playerNameParts] = rest;
+      const amount = parseInt(amountStr, 10);
+      const playerName = playerNameParts.join(' ');
+
+      if (isNaN(amount) || amount < 0) {
+        await msg.reply("Le montant doit être un nombre en millions d'euros (ex: 50 pour 50M€).");
+        return;
+      }
+
+      if (!fromClub.trim()) {
+        await msg.reply("Précise le club d'origine du joueur.");
+        return;
+      }
+
+      if (!playerName.trim()) {
+        await msg.reply("Précise le nom du joueur.");
+        return;
+      }
+
+      try {
+        // Récupérer le nom du coach depuis le store
+        const coach = store.getCoachProfile(guildId, userId);
+        const coachName = coach?.name || msg.member?.displayName || msg.author.username;
+
+        // Générer l'annonce audio avec le nom du coach
+        const audioPath = await generateMercatoAnnouncement(
+          playerName.replace(/['"]/g, ''), // Enlever les guillemets
+          amount,
+          fromClub.replace(/['"]/g, ''), // Enlever les guillemets du club aussi
+          userClub,
+          coachName // Passer le nom du coach pour l'audio aussi
+        );
+
+        // Jouer l'audio
+        const resource = createAudioResource(audioPath);
+        resource.metadata = { tempPath: audioPath };
+        enqueue(guildId, [resource]);
+
+        // Afficher le texte stylisé une fois tout prêt
+        const displayText = buildMercatoDisplayText(
+          playerName.replace(/['"]/g, ''),
+          amount,
+          fromClub.replace(/['"]/g, ''),
+          userClub,
+          coachName // Passer le nom du coach pour l'affichage aussi
+        );
+
+        await msg.channel.send(displayText);
+
+      } catch (error) {
+        console.error('[MERCATO] Erreur:', error);
+        await msg.reply("❌ Erreur lors de la génération de l'annonce mercato.");
+      }
+      return;
+    }
+
   } catch (e) {
     console.error('messageCreate error:', e);
     try { await msg.reply("Oups, une erreur est survenue."); } catch { }
