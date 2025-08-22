@@ -12,6 +12,8 @@ const ffmpegPath = require('ffmpeg-static');
 process.env.FFMPEG_PATH = ffmpegPath;
 
 const { generateQuestions } = require('./press');
+const { generateMercatoAnnouncement, buildMercatoDisplayText } = require('./mercato.js');
+const { buildEndingAnnouncement } = require('./ending.js');
 
 const fs = require('fs');
 const path = require('path');
@@ -37,7 +39,6 @@ const {
 } = require('@discordjs/voice');
 
 const { synthToFile } = require('./tts.js');
-const { generateMercatoAnnouncement, buildMercatoDisplayText } = require('./mercato.js');
 
 // --- TEXTE TTS IMPORTS (keep only these, remove duplicates) ---
 const { CLUB_VARIANTS, CONCEDING_TEAM_PHRASES } = require('./clubs.js');
@@ -554,19 +555,12 @@ async function enqueueJingleAndTTS(guildId, text) {
   enqueue(guildId, [j, t]);
 }
 
-// Fonction pour jouer un fichier audio simple
-async function playAudioFile(guildId, filePath) {
-  const st = getAudioState(guildId);
-  if (!st?.connection) return false;
-
-  try {
-    const resource = createAudioResource(filePath);
-    enqueue(guildId, [resource]);
-    return true;
-  } catch (error) {
-    console.error(`[AUDIO] Erreur lecture ${filePath}:`, error);
-    return false;
-  }
+// TTS seul (sans jingle) pour les annonces de fin de match
+async function enqueueTTSOnly(guildId, text) {
+  const ttsPath = path.join(ASSETS_DIR, `tts_${Date.now()}.mp3`);
+  await synthToFile(text, ttsPath, "fr-FR-HenriNeural");
+  const t = createAudioResource(ttsPath); t.metadata = { tempPath: ttsPath };
+  enqueue(guildId, [t]);
 }
 
 // --- CLIENT ---
@@ -742,9 +736,17 @@ client.on('messageCreate', async (msg) => {
     }
 
     if (cmd === '!fin') {
+      const st = getAudioState(guildId);
+      
       m.status = 'FIN';
       m.minute = 90;
       m.minuteLabel = '90';
+      
+      // NOUVEAU : Générer et jouer l'annonce de fin de match (SANS jingle)
+      if (st?.connection && m.team && m.opp) {
+        const endingText = buildEndingAnnouncement(m.team, m.opp, m.for, m.against);
+        await enqueueTTSOnly(guildId, endingText);
+      }
       
       // NOUVEAU : Sauvegarder automatiquement le match dans l'historique
       if (m.team && m.opp) {
@@ -777,9 +779,11 @@ client.on('messageCreate', async (msg) => {
         
         // Message informatif sur l'auto-incrémentation
         const autoInfo = competition === 'Ligue 1' && matchday ? ` (J${matchday} auto-assignée)` : '';
-        await msg.reply(`🔴 Fin du match. (Ajouté automatiquement à l'historique${autoInfo})`);
+        const audioInfo = st?.connection ? ' + annonce vocale' : '';
+        await msg.reply(`🔴 Fin du match. (Ajouté automatiquement à l'historique${autoInfo}${audioInfo})`);
       } else {
-        await msg.reply('🔴 Fin du match. (Ajouté automatiquement à l\'historique)');
+        const audioInfo = st?.connection ? ' + annonce vocale' : '';
+        await msg.reply(`🔴 Fin du match.${audioInfo}`);
       }
       
       await updateBoardMsg(client, guildId);
@@ -1529,4 +1533,19 @@ async function updateBoardMessage(interaction) {
     const msg = await interaction.channel.messages.fetch(g.boardMsgId);
     await msg.edit(renderBoard(interaction.guildId, interaction.client));
   } catch { }
+}
+
+// Fonction pour jouer un fichier audio simple
+async function playAudioFile(guildId, filePath) {
+  const st = getAudioState(guildId);
+  if (!st?.connection) return false;
+
+  try {
+    const resource = createAudioResource(filePath);
+    enqueue(guildId, [resource]);
+    return true;
+  } catch (error) {
+    console.error(`[AUDIO] Erreur lecture ${filePath}:`, error);
+    return false;
+  }
 }
