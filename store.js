@@ -2,123 +2,107 @@
 const fs = require('fs');
 const path = require('path');
 
-const DATA_DIR = path.join(__dirname, 'data');
-const PROFILES_PATH = path.join(DATA_DIR, 'profiles.json');
+const DATA_DIR = 'data';
+const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
 
-let memory = { guilds: {} };
-let saveTimer = null;
+let profiles = { guilds: {} };
 
-async function loadProfiles() {
-  await fs.promises.mkdir(DATA_DIR, { recursive: true });
-  try {
-    const raw = await fs.promises.readFile(PROFILES_PATH, 'utf8');
-    memory = JSON.parse(raw || '{"guilds":{}}');
-    if (!memory.guilds) memory.guilds = {};
-    console.log('[STORE] Profils chargés');
-  } catch (e) {
-    if (e.code === 'ENOENT') {
-      memory = { guilds: {} };
-      await saveNow();
-      console.log('[STORE] Nouveau store initialisé');
-    } else {
-      console.error('[STORE] Erreur de lecture:', e);
-    }
+// NOUVEAU : État des conférences de presse en cours
+const activePressSessions = new Map(); // guildId-userId -> { questions: [], currentIndex: 0, journalist: {} }
+
+// Initialisation
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
   }
 }
 
+function ensureProfile(guildId, userId) {
+  if (!profiles.guilds[guildId]) {
+    profiles.guilds[guildId] = {};
+  }
+  if (!profiles.guilds[guildId][userId]) {
+    profiles.guilds[guildId][userId] = {};
+  }
+}
+
+// Chargement/Sauvegarde
+async function loadProfiles() {
+  ensureDataDir();
+  try {
+    if (fs.existsSync(PROFILES_FILE)) {
+      const data = fs.readFileSync(PROFILES_FILE, 'utf8');
+      profiles = JSON.parse(data);
+      console.log('[STORE] Profils chargés');
+    } else {
+      console.log('[STORE] Aucun fichier de profils existant, initialisation');
+    }
+  } catch (error) {
+    console.error('[STORE] Erreur chargement profils:', error);
+    profiles = { guilds: {} };
+  }
+}
+
+function saveProfiles() {
+  try {
+    ensureDataDir();
+    fs.writeFileSync(PROFILES_FILE, JSON.stringify(profiles, null, 2));
+  } catch (error) {
+    console.error('[STORE] Erreur sauvegarde profils:', error);
+  }
+}
+
+// Gestion des équipes
 function getTeam(guildId, userId) {
-  return memory.guilds?.[guildId]?.[userId]?.team || null;
+  ensureProfile(guildId, userId);
+  return profiles.guilds[guildId][userId].team;
 }
 
 function setTeam(guildId, userId, team) {
-  if (!memory.guilds[guildId]) memory.guilds[guildId] = {};
-  if (!memory.guilds[guildId][userId]) memory.guilds[guildId][userId] = {};
-  memory.guilds[guildId][userId].team = team;
-  scheduleSave();
+  ensureProfile(guildId, userId);
+  profiles.guilds[guildId][userId].team = team;
+  saveProfiles();
 }
 
 function clearTeam(guildId, userId) {
-  if (memory.guilds?.[guildId]?.[userId]) {
-    delete memory.guilds[guildId][userId].team;
-    if (Object.keys(memory.guilds[guildId][userId]).length === 0) {
-      delete memory.guilds[guildId][userId];
-    }
-    scheduleSave();
+  ensureProfile(guildId, userId);
+  delete profiles.guilds[guildId][userId].team;
+  saveProfiles();
+}
+
+// Gestion du tableau (board)
+function getBoard(guildId) {
+  return profiles.guilds[guildId]?._board;
+}
+
+function setBoard(guildId, channelId, msgId) {
+  if (!profiles.guilds[guildId]) {
+    profiles.guilds[guildId] = {};
   }
+  profiles.guilds[guildId]._board = { channelId, msgId };
+  saveProfiles();
 }
 
-function scheduleSave() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveNow, 500); // Sauvegarde après 500ms d'inactivité
-}
-
-async function saveNow() {
-  const tmp = PROFILES_PATH + '.tmp';
-  const json = JSON.stringify(memory, null, 2);
-  await fs.promises.writeFile(tmp, json, 'utf8');
-  await fs.promises.rename(tmp, PROFILES_PATH); // Atomique pour éviter la corruption
-}
-
-function ensureGuild(gid){ if(!memory.guilds[gid]) memory.guilds[gid]={}; }
-function ensureUser(gid, uid) {
-  ensureGuild(gid);
-  if (!memory.guilds[gid][uid]) memory.guilds[gid][uid] = {};
-}
-
-// === FONCTIONS BOARD (TABLEAU) ===
-
-function getBoard(guildId){
-  return memory.guilds?.[guildId]?._board || null; // { channelId, msgId }
-}
-
-function setBoard(guildId, channelId, msgId){
-  ensureGuild(guildId);
-  memory.guilds[guildId]._board = { channelId, msgId };
-  scheduleSave();
-}
-
-function clearBoard(guildId){
-  if (memory.guilds?.[guildId]?._board){
-    delete memory.guilds[guildId]._board;
-    scheduleSave();
-  }
-}
-
-// === NOUVELLES FONCTIONS COACH PROFILE ===
-
+// Gestion du profil coach
 function getCoachProfile(guildId, userId) {
-  return memory.guilds?.[guildId]?.[userId]?.coach || null;
-}
-
-function setCoachProfile(guildId, userId, profile) {
-  ensureUser(guildId, userId);
-  if (!memory.guilds[guildId][userId].coach) {
-    memory.guilds[guildId][userId].coach = {};
-  }
-  Object.assign(memory.guilds[guildId][userId].coach, profile);
-  scheduleSave();
+  ensureProfile(guildId, userId);
+  return profiles.guilds[guildId][userId].coach || {};
 }
 
 function updateCoachProfile(guildId, userId, updates) {
-  ensureUser(guildId, userId);
-  if (!memory.guilds[guildId][userId].coach) {
-    memory.guilds[guildId][userId].coach = {};
+  ensureProfile(guildId, userId);
+  if (!profiles.guilds[guildId][userId].coach) {
+    profiles.guilds[guildId][userId].coach = {};
   }
-  Object.assign(memory.guilds[guildId][userId].coach, updates);
-  scheduleSave();
+  Object.assign(profiles.guilds[guildId][userId].coach, updates);
+  saveProfiles();
 }
 
-// === NOUVELLES FONCTIONS HISTORIQUE MATCHS ===
-
-function getMatchHistory(guildId, userId, limit = 10) {
-  const matches = memory.guilds?.[guildId]?.[userId]?.matchHistory || [];
-  return matches.slice(-limit).reverse(); // Les plus récents en premier
-}
-
+// Gestion de l'historique des matchs
 function addMatchToHistory(guildId, userId, matchData) {
-  ensureUser(guildId, userId);
-  if (!memory.guilds[guildId][userId].matchHistory) {
-    memory.guilds[guildId][userId].matchHistory = [];
+  ensureProfile(guildId, userId);
+  if (!profiles.guilds[guildId][userId].matchHistory) {
+    profiles.guilds[guildId][userId].matchHistory = [];
   }
   
   const match = {
@@ -127,96 +111,163 @@ function addMatchToHistory(guildId, userId, matchData) {
     ...matchData
   };
   
-  memory.guilds[guildId][userId].matchHistory.push(match);
+  // Ajouter au début (plus récent en premier)
+  profiles.guilds[guildId][userId].matchHistory.unshift(match);
   
-  // Limite à 100 matchs max pour éviter la surcharge
-  if (memory.guilds[guildId][userId].matchHistory.length > 100) {
-    memory.guilds[guildId][userId].matchHistory = 
-      memory.guilds[guildId][userId].matchHistory.slice(-100);
+  // Limiter à 100 matchs
+  if (profiles.guilds[guildId][userId].matchHistory.length > 100) {
+    profiles.guilds[guildId][userId].matchHistory = profiles.guilds[guildId][userId].matchHistory.slice(0, 100);
   }
   
-  scheduleSave(); // ← SAUVEGARDE AUTOMATIQUE
+  saveProfiles();
   return match.id;
 }
 
+function getMatchHistory(guildId, userId, limit = 10) {
+  ensureProfile(guildId, userId);
+  const history = profiles.guilds[guildId][userId].matchHistory || [];
+  return history.slice(0, limit);
+}
+
 function updateMatchInHistory(guildId, userId, matchId, updates) {
-  const matches = memory.guilds?.[guildId]?.[userId]?.matchHistory;
-  if (!matches) return false;
+  ensureProfile(guildId, userId);
+  const history = profiles.guilds[guildId][userId].matchHistory || [];
+  const matchIndex = history.findIndex(match => match.id === matchId);
   
-  const match = matches.find(m => m.id === matchId);
-  if (!match) return false;
+  if (matchIndex === -1) {
+    return false;
+  }
   
-  Object.assign(match, updates);
-  scheduleSave();
+  Object.assign(history[matchIndex], updates);
+  saveProfiles();
   return true;
 }
 
 function deleteMatchFromHistory(guildId, userId, matchId) {
-  const matches = memory.guilds?.[guildId]?.[userId]?.matchHistory;
-  if (!matches) return false;
+  ensureProfile(guildId, userId);
+  const history = profiles.guilds[guildId][userId].matchHistory || [];
+  const matchIndex = history.findIndex(match => match.id === matchId);
   
-  const index = matches.findIndex(m => m.id === matchId);
-  if (index === -1) return false;
+  if (matchIndex === -1) {
+    return false;
+  }
   
-  matches.splice(index, 1);
-  scheduleSave();
+  history.splice(matchIndex, 1);
+  saveProfiles();
   return true;
 }
 
-function getLastMatch(guildId, userId) {
-  const matches = memory.guilds?.[guildId]?.[userId]?.matchHistory || [];
-  return matches[matches.length - 1] || null;
-}
-
-// === NOUVELLES FONCTIONS COMPÉTITIONS ===
-
-function getCompetitions(guildId, userId) {
-  return memory.guilds?.[guildId]?.[userId]?.competitions || {};
-}
-
-function setCompetition(guildId, userId, competitionName, data) {
-  ensureUser(guildId, userId);
-  if (!memory.guilds[guildId][userId].competitions) {
-    memory.guilds[guildId][userId].competitions = {};
-  }
-  memory.guilds[guildId][userId].competitions[competitionName] = data;
-  scheduleSave();
-}
-
-function getCurrentCompetition(guildId, userId) {
-  const coach = getCoachProfile(guildId, userId);
-  return coach?.currentCompetition || null;
-}
-
+// Auto-incrémentation des journées
 function getNextMatchday(guildId, userId) {
   const coach = getCoachProfile(guildId, userId);
-  const currentCompetition = coach?.currentCompetition || 'Ligue 1';
+  const history = getMatchHistory(guildId, userId, 100);
   
-  // Auto-incrémentation uniquement pour la Ligue 1
-  if (currentCompetition === 'Ligue 1') {
-    const matches = getMatchHistory(guildId, userId, 50); // Chercher dans plus d'historique
-    
-    // Trouver la journée la plus récente en Ligue 1
-    const ligue1Matches = matches.filter(m => m.competition === 'Ligue 1' && m.matchday);
-    
-    if (ligue1Matches.length > 0) {
-      const lastMatchday = Math.max(...ligue1Matches.map(m => m.matchday));
-      return Math.min(lastMatchday + 1, 38); // Maximum 38 journées en Ligue 1
-    }
-    
-    // Si aucun match avec journée trouvé, commencer à J1
-    return 1;
+  if (!history.length) {
+    return 1; // Premier match = J1
   }
   
-  // Pour les autres compétitions, utiliser la journée définie manuellement
-  return coach?.currentMatchday || null;
+  // Trouver la dernière journée en Ligue 1
+  const ligue1Matches = history.filter(match => match.competition === 'Ligue 1');
+  if (!ligue1Matches.length) {
+    return coach.currentMatchday || 1;
+  }
+  
+  const lastMatchday = Math.max(...ligue1Matches.map(match => match.matchday || 0));
+  return lastMatchday + 1;
 }
 
-module.exports = { 
-  loadProfiles, getTeam, setTeam, clearTeam, getBoard, setBoard, clearBoard,
-  // Nouvelles exports
-  getCoachProfile, setCoachProfile, updateCoachProfile,
-  getMatchHistory, addMatchToHistory, updateMatchInHistory, getLastMatch,
-  getCompetitions, setCompetition, getCurrentCompetition,
-  deleteMatchFromHistory, getNextMatchday
+function incrementPressCounter(guildId, userId) {
+  ensureProfile(guildId, userId);
+  const profile = profiles.guilds[guildId][userId];
+  
+  if (!profile.coach) profile.coach = {};
+  if (typeof profile.coach.pressCounter !== 'number') {
+    profile.coach.pressCounter = 0;
+  }
+  
+  // Incrémentation aléatoire de 1 à 4 avec chances égales
+  const increment = Math.floor(Math.random() * 4) + 1;
+  profile.coach.pressCounter = Math.min(10, profile.coach.pressCounter + increment);
+  
+  console.log(`[PRESS] Compteur incrémenté de +${increment} pour ${userId} → ${profile.coach.pressCounter}/10`);
+  
+  saveProfiles();
+  return profile.coach.pressCounter;
+}
+
+function resetPressCounter(guildId, userId) {
+  ensureProfile(guildId, userId);
+  const profile = profiles.guilds[guildId][userId];
+  
+  if (!profile.coach) profile.coach = {};
+  profile.coach.pressCounter = 0;
+  
+  saveProfiles();
+}
+
+function getPressCounter(guildId, userId) {
+  ensureProfile(guildId, userId);
+  const profile = profiles.guilds[guildId][userId];
+  
+  if (!profile.coach) return 0;
+  return profile.coach.pressCounter || 0;
+}
+
+// NOUVEAU : Gestion des sessions de conférence de presse
+function startPressSession(guildId, userId, questions, journalist) {
+  const key = `${guildId}-${userId}`;
+  activePressSessions.set(key, {
+    questions,
+    currentIndex: 0,
+    journalist
+  });
+}
+
+function getPressSession(guildId, userId) {
+  const key = `${guildId}-${userId}`;
+  return activePressSessions.get(key);
+}
+
+function advancePressSession(guildId, userId) {
+  const key = `${guildId}-${userId}`;
+  const session = activePressSessions.get(key);
+  if (!session) return null;
+  
+  session.currentIndex++;
+  if (session.currentIndex >= session.questions.length) {
+    // Fin de la conférence
+    activePressSessions.delete(key);
+    return null;
+  }
+  
+  return session;
+}
+
+function clearPressSession(guildId, userId) {
+  const key = `${guildId}-${userId}`;
+  activePressSessions.delete(key);
+}
+
+module.exports = {
+  loadProfiles,
+  saveProfiles,
+  getTeam,
+  setTeam,
+  clearTeam,
+  getBoard,
+  setBoard,
+  getCoachProfile,
+  updateCoachProfile,
+  addMatchToHistory,
+  getMatchHistory,
+  updateMatchInHistory,
+  deleteMatchFromHistory,
+  getNextMatchday,
+  incrementPressCounter,
+  resetPressCounter,
+  getPressCounter,
+  startPressSession,
+  getPressSession,
+  advancePressSession,
+  clearPressSession
 };

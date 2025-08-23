@@ -752,7 +752,7 @@ client.on('messageCreate', async (msg) => {
       if (m.team && m.opp) {
         const coach = store.getCoachProfile(guildId, userId);
         const competition = coach?.currentCompetition || 'Ligue 1';
-        
+
         // NOUVEAU : Auto-incrémentation pour Ligue 1
         let matchday = null;
         if (competition === 'Ligue 1') {
@@ -763,7 +763,7 @@ client.on('messageCreate', async (msg) => {
           // Pour les autres compétitions, utiliser la journée définie manuellement
           matchday = coach?.currentMatchday || null;
         }
-        
+
         const matchData = {
           team: m.team,
           opponent: m.opp,
@@ -774,18 +774,79 @@ client.on('messageCreate', async (msg) => {
           scorersFor: m.scorersFor || [],
           scorersAgainst: m.scorersAgainst || []
         };
-        
+
         store.addMatchToHistory(guildId, userId, matchData);
-        
-        // Message informatif sur l'auto-incrémentation
+
+        const pressCounter = store.incrementPressCounter(guildId, userId);
         const autoInfo = competition === 'Ligue 1' && matchday ? ` (J${matchday} auto-assignée)` : '';
-        const audioInfo = st?.connection ? ' + annonce vocale' : '';
-        await msg.reply(`🔴 Fin du match. (Ajouté automatiquement à l'historique${autoInfo}${audioInfo})`);
+
+        let replyMessage = `🔴 Fin du match. (Ajouté automatiquement à l'historique${autoInfo})`;
+
+        // NOUVEAU : Déclenchement automatique de la conférence de presse
+        if (pressCounter >= 10) {
+          try {
+            // Générer la conférence de presse
+            const recentMatches = store.getMatchHistory(guildId, userId, 5);
+            const lastMatch = recentMatches[0];
+
+            const ctx = {
+              coach: coach?.name || msg.member?.displayName || msg.author.username,
+              team: lastMatch.team || 'votre équipe',
+              opp: lastMatch.opponent || 'l\'adversaire',
+              for: lastMatch.scoreFor || 0,
+              against: lastMatch.scoreAgainst || 0,
+              scorersFor: lastMatch.scorersFor || [],
+              scorersAgainst: lastMatch.scorersAgainst || [],
+              phase: lastMatch.competition || 'Ligue 1',
+              matchday: lastMatch.matchday,
+              nationality: coach?.nationality,
+              age: coach?.age,
+              currentSeason: coach?.currentSeason,
+              recentMatches: recentMatches.slice(1).map(match => ({
+                opponent: match.opponent,
+                result: `${match.scoreFor}-${match.scoreAgainst}`,
+                competition: match.competition,
+                matchday: match.matchday,
+                scorersFor: match.scorersFor || [],
+                scorersAgainst: match.scorersAgainst || [],
+                date: match.date
+              }))
+            };
+
+            const pressResult = await generateQuestions(ctx, 2);
+            const journalist = pressResult.journalist || { name: "Journaliste", media: "Média Sport" };
+            const questions = pressResult.questions || [];
+
+            // Démarrer la session de conférence de presse
+            store.startPressSession(guildId, userId, questions, journalist);
+            store.resetPressCounter(guildId, userId);
+
+            replyMessage += `\n\n🎙️ **CONFÉRENCE DE PRESSE DÉCLENCHÉE !**\n${pressResult.presentation}\n\n💡 Tapez \`!conf\` pour commencer la conférence de presse.`;
+
+            // NOUVEAU : Lire la présentation en audio si connecté
+            const st = getAudioState(guildId);
+            if (st?.connection) {
+              const presentationPath = path.join(ASSETS_DIR, `press_auto_presentation_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
+              await synthToFile(pressResult.presentation, presentationPath, "fr-FR-HenriNeural");
+              const presRes = createAudioResource(presentationPath);
+              presRes.metadata = { tempPath: presentationPath };
+              enqueue(guildId, [presRes]);
+            }
+
+          } catch (error) {
+            console.error('[PRESS AUTO] Erreur génération:', error);
+            replyMessage += `\n\n🎙️ Conférence de presse déclenchée mais erreur de génération. Utilisez \`!conf --force\`.`;
+          }
+        } else {
+          replyMessage += `\n📊 Compteur conférence : ${pressCounter}/10`;
+        }
+
+        await msg.reply(replyMessage);
       } else {
         const audioInfo = st?.connection ? ' + annonce vocale' : '';
         await msg.reply(`🔴 Fin du match.${audioInfo}`);
       }
-      
+
       await updateBoardMsg(client, guildId);
       return;
     }
@@ -879,34 +940,78 @@ client.on('messageCreate', async (msg) => {
     }
 
     if (cmd === '!conf') {
-      const n = rest[0] ? parseInt(rest[0], 10) : undefined;
-      
-      // NOUVEAU : Utiliser le dernier match de l'historique comme contexte principal
+      // NOUVEAU : Vérifier si --force est utilisé
+      const isForced = rest.includes('--force');
+      const filteredRest = rest.filter(arg => arg !== '--force');
+      const n = filteredRest[0] ? parseInt(filteredRest[0], 10) : undefined;
+
+      // NOUVEAU : Vérifier s'il y a une session active
+      const activeSession = store.getPressSession(guildId, userId);
+
+      if (activeSession) {
+        // Continuer la session active (même si --force est présent, on continue la session en cours)
+        const currentQ = activeSession.questions[activeSession.currentIndex];
+        const isLastQuestion = activeSession.currentIndex === activeSession.questions.length - 1;
+
+        let questionText = currentQ;
+        if (isLastQuestion) {
+          // Ajouter "Merci." à la dernière question
+          questionText += questionText.endsWith('.') ? ' Merci.' : '. Merci.';
+        }
+
+        const matchInfo = `Q${activeSession.currentIndex + 1}/${activeSession.questions.length}`;
+        await msg.channel.send(`🎙️ **${matchInfo}** — ${questionText}`);
+
+        // Lire la question au vocal si connecté
+        const st = getAudioState(guildId);
+        if (st?.connection) {
+          const ttsPath = path.join(ASSETS_DIR, `press_q${activeSession.currentIndex}_${Date.now()}.mp3`);
+          await synthToFile(questionText, ttsPath, "fr-FR-HenriNeural");
+          const res = createAudioResource(ttsPath);
+          res.metadata = { tempPath: ttsPath };
+          enqueue(guildId, [res]);
+        }
+
+        // Avancer ou terminer la session
+        const nextSession = store.advancePressSession(guildId, userId);
+        if (!nextSession) {
+          await msg.channel.send("📝 **Fin de la conférence de presse.** Merci !");
+        } else {
+          await msg.channel.send(`💡 Tapez \`!conf\` pour la question suivante (${nextSession.currentIndex + 1}/${nextSession.questions.length}).`);
+        }
+
+        return;
+      }
+
+      // NOUVEAU : Si pas de session active et pas de --force, refuser
+      if (!isForced) {
+        return void msg.reply("❌ Aucune conférence de presse en cours. Les conférences se déclenchent automatiquement après plusieurs matchs ou utilisez `!conf --force` pour en forcer une.");
+      }
+
+      // NOUVEAU : Logique pour démarrer une nouvelle conférence (SEULEMENT si forcée)
       const coach = store.getCoachProfile(guildId, userId);
       const recentMatches = store.getMatchHistory(guildId, userId, 5);
-      
+
       if (recentMatches.length === 0) {
         return void msg.reply("Aucun match dans l'historique. Termine un match avec `!fin` pour générer une conférence de presse.");
       }
-      
+
       // Le dernier match (le plus récent) devient le contexte principal
       const lastMatch = recentMatches[0];
-      
+
       const ctx = {
         coach: coach?.name || msg.member?.displayName || msg.author.username,
-        team: lastMatch.team || 'votre équipe', 
+        team: lastMatch.team || 'votre équipe',
         opp: lastMatch.opponent || 'l\'adversaire',
-        for: lastMatch.scoreFor || 0, 
+        for: lastMatch.scoreFor || 0,
         against: lastMatch.scoreAgainst || 0,
-        scorersFor: lastMatch.scorersFor || [], 
+        scorersFor: lastMatch.scorersFor || [],
         scorersAgainst: lastMatch.scorersAgainst || [],
         phase: lastMatch.competition || 'Ligue 1',
         matchday: lastMatch.matchday,
-        // Contexte étendu du coach
         nationality: coach?.nationality,
         age: coach?.age,
         currentSeason: coach?.currentSeason,
-        // CORRIGÉ : Historique SANS le match actuel (on enlève le premier élément)
         recentMatches: recentMatches.slice(1).map(match => ({
           opponent: match.opponent,
           result: `${match.scoreFor}-${match.scoreAgainst}`,
@@ -918,25 +1023,35 @@ client.on('messageCreate', async (msg) => {
         }))
       };
 
-      const qs = await generateQuestions(ctx, n);
+      const pressResult = await generateQuestions(ctx, n || 2);
+      const presentation = pressResult.presentation || `Bonjour coach ${ctx.coach}, journaliste.`;
+      const qs = pressResult.questions || [];
+      const journalist = pressResult.journalist || { name: "Journaliste", media: "Média Sport" };
 
-      // 1) poster les questions
+      // Mode classique avec --force : afficher toutes les questions d'un coup
       const lines = qs.map((q, i) => `**Q${i + 1}.** ${q}`).join('\n');
       const matchInfo = `${ctx.team} ${ctx.for}-${ctx.against} ${ctx.opp}${ctx.matchday ? ` (J${ctx.matchday})` : ''}`;
-      await msg.channel.send({ content: `🎙️ **Conférence de presse** — ${matchInfo}\n${lines}` });
 
-      // 2) les lire au vocal si connecté
+      const fullMessage = `🎙️ **Conférence de presse (forcée)** — ${matchInfo}\n\n${presentation}\n\n${lines}`;
+      await msg.channel.send({ content: fullMessage });
+
+      // Lire toutes les questions
       const st = getAudioState(guildId);
       if (st?.connection) {
+        const presentationPath = path.join(ASSETS_DIR, `press_presentation_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
+        await synthToFile(presentation, presentationPath, "fr-FR-HenriNeural");
+        const presRes = createAudioResource(presentationPath);
+        presRes.metadata = { tempPath: presentationPath };
+        enqueue(guildId, [presRes]);
+
         for (const q of qs) {
           const ttsPath = path.join(ASSETS_DIR, `press_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
           await synthToFile(q, ttsPath, "fr-FR-HenriNeural");
           const res = createAudioResource(ttsPath); res.metadata = { tempPath: ttsPath };
           enqueue(guildId, [res]);
         }
-      } else {
-        await msg.channel.send("🔈 (Pas dans un salon vocal, questions envoyées seulement en texte.)");
       }
+
       return;
     }
 
@@ -973,13 +1088,13 @@ client.on('messageCreate', async (msg) => {
     }
 
     // ====== NOUVELLES COMMANDES COACH PROFILE ======
-    
+
     if (cmd === '!coach') {
       const profile = store.getCoachProfile(guildId, userId);
       if (!profile || Object.keys(profile).length === 0) {
         return void msg.reply("Aucun profil coach configuré. Utilise `!coach-set nom <nom>` pour commencer.");
       }
-      
+
       const lines = [];
       lines.push(`👤 **Profil Coach** — ${msg.author.username}`);
       if (profile.name) lines.push(`Nom : ${profile.name}`);
@@ -988,7 +1103,7 @@ client.on('messageCreate', async (msg) => {
       if (profile.currentCompetition) lines.push(`Compétition actuelle : ${profile.currentCompetition}`);
       if (profile.currentSeason) lines.push(`Saison : ${profile.currentSeason}`);
       if (profile.currentMatchday) lines.push(`Journée actuelle : J${profile.currentMatchday}`);
-      
+
       await msg.reply(lines.join('\n'));
       return;
     }
@@ -997,14 +1112,14 @@ client.on('messageCreate', async (msg) => {
       if (rest.length < 2) {
         return void msg.reply("Utilise : `!coach-set <propriété> <valeur>`\nPropriétés : nom, nationalité, age, compétition, saison, journée");
       }
-      
+
       const [prop, ...valueParts] = rest;
       const value = valueParts.join(' ');
-      
+
       const validProps = {
         'nom': 'name',
         'name': 'name',
-        'nationalité': 'nationality', 
+        'nationalité': 'nationality',
         'nationality': 'nationality',
         'age': 'age',
         'âge': 'age',
@@ -1017,12 +1132,12 @@ client.on('messageCreate', async (msg) => {
         'matchday': 'currentMatchday',
         'j': 'currentMatchday'
       };
-      
+
       const mappedProp = validProps[prop.toLowerCase()];
       if (!mappedProp) {
         return void msg.reply("Propriété inconnue. Utilise : nom, nationalité, age, compétition, saison, journée");
       }
-      
+
       const updates = {};
       if (mappedProp === 'age') {
         const age = parseInt(value, 10);
@@ -1039,20 +1154,20 @@ client.on('messageCreate', async (msg) => {
       } else {
         updates[mappedProp] = value;
       }
-      
+
       store.updateCoachProfile(guildId, userId, updates);
       await msg.reply(`✅ ${prop} mis à jour : **${value}**`);
       return;
     }
 
     // ====== NOUVELLES COMMANDES COMPÉTITION/JOURNÉE ======
-    
+
     if (cmd === '!comp') {
       if (rest.length === 0) {
         // Afficher la compétition actuelle avec info sur l'auto-incrémentation
         const coach = store.getCoachProfile(guildId, userId);
         const current = coach?.currentCompetition || 'Ligue 1';
-        
+
         if (current === 'Ligue 1') {
           const nextMatchday = store.getNextMatchday(guildId, userId);
           return void msg.reply(`🏆 Compétition actuelle : **${current}** (J${nextMatchday} auto-calculée)\n💡 Les journées s'incrémentent automatiquement en Ligue 1`);
@@ -1061,10 +1176,10 @@ client.on('messageCreate', async (msg) => {
           return void msg.reply(`🏆 Compétition actuelle : **${current}**${matchday}`);
         }
       }
-      
+
       const competition = rest.join(' ').trim();
       store.updateCoachProfile(guildId, userId, { currentCompetition: competition });
-      
+
       // Message informatif sur l'auto-incrémentation
       const autoInfo = competition === 'Ligue 1' ? '\n💡 Les journées s\'incrémentent automatiquement en Ligue 1' : '';
       await msg.reply(`🏆 Compétition définie : **${competition}**${autoInfo}`);
@@ -1076,7 +1191,7 @@ client.on('messageCreate', async (msg) => {
         // Afficher la journée actuelle avec info auto-incrémentation
         const coach = store.getCoachProfile(guildId, userId);
         const competition = coach?.currentCompetition || 'Ligue 1';
-        
+
         if (competition === 'Ligue 1') {
           const nextMatchday = store.getNextMatchday(guildId, userId);
           return void msg.reply(`📅 Prochaine journée Ligue 1 : **J${nextMatchday}** (auto-calculée)\n💡 Les journées s'incrémentent automatiquement en Ligue 1`);
@@ -1086,12 +1201,12 @@ client.on('messageCreate', async (msg) => {
           return void msg.reply(`📅 Journée actuelle : **J${current}**${comp}`);
         }
       }
-      
+
       const matchday = parseInt(rest[0], 10);
       if (isNaN(matchday) || matchday < 1 || matchday > 99) {
         return void msg.reply("La journée doit être un nombre entre 1 et 99.");
       }
-      
+
       store.updateCoachProfile(guildId, userId, { currentMatchday: matchday });
       await msg.reply(`📅 Journée définie : **J${matchday}**`);
       return;
@@ -1102,11 +1217,11 @@ client.on('messageCreate', async (msg) => {
       const coach = store.getCoachProfile(guildId, userId);
       const current = coach?.currentMatchday || 0;
       const next = current + 1;
-      
+
       if (next > 99) {
         return void msg.reply("Journée maximum atteinte (99).");
       }
-      
+
       store.updateCoachProfile(guildId, userId, { currentMatchday: next });
       await msg.reply(`📅 Passage à la journée suivante : **J${next}**`);
       return;
@@ -1119,38 +1234,61 @@ client.on('messageCreate', async (msg) => {
         const current = coach?.currentSeason || 'Non définie';
         return void msg.reply(`📆 Saison actuelle : **${current}**`);
       }
-      
+
       const season = rest.join(' ').trim();
       store.updateCoachProfile(guildId, userId, { currentSeason: season });
       await msg.reply(`📆 Saison définie : **${season}**`);
       return;
     }
 
+    // ====== NOUVELLES COMMANDES GESTION COMPTEUR JOURNÉE ======
+
+    if (cmd === '!matchday-reset') {
+      store.updateCoachProfile(guildId, userId, { currentMatchday: 1 });
+      await msg.reply(`📅 Compteur de journée remis à zéro : **J1**`);
+      return;
+    }
+
+    if (cmd === '!matchday-set') {
+      if (rest.length === 0) {
+        return void msg.reply("Utilise : `!matchday-set <journée>`\nExemple : `!matchday-set 15`");
+      }
+
+      const matchday = parseInt(rest[0], 10);
+      if (isNaN(matchday) || matchday < 1 || matchday > 99) {
+        return void msg.reply("La journée doit être un nombre entre 1 et 99.");
+      }
+
+      store.updateCoachProfile(guildId, userId, { currentMatchday: matchday });
+      await msg.reply(`📅 Compteur de journée défini : **J${matchday}**`);
+      return;
+    }
+
     // ====== COMMANDE SETUP RAPIDE ======
-    
+
     if (cmd === '!setup') {
       if (rest.length < 2) {
         return void msg.reply("Utilise : `!setup <compétition> <journée> [saison]`\nExemple : `!setup \"Ligue 1\" 15 \"2024-2025\"`");
       }
-      
+
       const [competition, matchdayStr, ...seasonParts] = rest;
       const matchday = parseInt(matchdayStr, 10);
-      
+
       if (isNaN(matchday) || matchday < 1 || matchday > 99) {
         return void msg.reply("La journée doit être un nombre entre 1 et 99.");
       }
-      
+
       const updates = {
         currentCompetition: competition,
         currentMatchday: matchday
       };
-      
+
       if (seasonParts.length > 0) {
         updates.currentSeason = seasonParts.join(' ');
       }
-      
+
       store.updateCoachProfile(guildId, userId, updates);
-      
+
       const seasonText = updates.currentSeason ? ` (${updates.currentSeason})` : '';
       await msg.reply(`⚙️ Configuration mise à jour :\n🏆 Compétition : **${competition}**\n📅 Journée : **J${matchday}**${seasonText}`);
       return;
@@ -1161,19 +1299,19 @@ client.on('messageCreate', async (msg) => {
       if (rest.length < 3) {
         return void msg.reply("Utilise : `!match-add <adversaire> <score_pour> <score_contre> [compétition] [journée]`");
       }
-      
+
       const [opponent, scoreForStr, scoreAgainstStr, competition, matchday] = rest;
       const scoreFor = parseInt(scoreForStr, 10);
       const scoreAgainst = parseInt(scoreAgainstStr, 10);
-      
+
       if (isNaN(scoreFor) || isNaN(scoreAgainst)) {
         return void msg.reply("Les scores doivent être des nombres valides.");
       }
-      
+
       const m = getMatch(guildId, userId);
       const coach = store.getCoachProfile(guildId, userId);
       const finalCompetition = competition || coach?.currentCompetition || 'Ligue 1';
-      
+
       // NOUVEAU : Auto-incrémentation pour Ligue 1 si pas de journée spécifiée
       let finalMatchday = null;
       if (matchday) {
@@ -1185,7 +1323,7 @@ client.on('messageCreate', async (msg) => {
       } else {
         finalMatchday = coach?.currentMatchday || null;
       }
-      
+
       const matchData = {
         team: m.team,
         opponent,
@@ -1196,7 +1334,7 @@ client.on('messageCreate', async (msg) => {
         scorersFor: [],
         scorersAgainst: []
       };
-      
+
       const matchId = store.addMatchToHistory(guildId, userId, matchData);
       const autoInfo = finalCompetition === 'Ligue 1' && finalMatchday && !matchday ? ` (J${finalMatchday} auto-assignée)` : '';
       await msg.reply(`✅ Match ajouté à l'historique (ID: ${matchId})${autoInfo}`);
@@ -1206,21 +1344,21 @@ client.on('messageCreate', async (msg) => {
     if (cmd === '!history') {
       const limit = rest[0] ? Math.min(parseInt(rest[0], 10) || 5, 20) : 5;
       const matches = store.getMatchHistory(guildId, userId, limit);
-      
+
       if (matches.length === 0) {
         return void msg.reply("Aucun match dans l'historique. Les matchs terminés avec `!fin` y sont automatiquement ajoutés.");
       }
-      
+
       const lines = [`📋 **Historique** — ${matches.length} dernier(s) match(s)`];
       matches.forEach((match, i) => {
         const result = `${match.scoreFor || 0}-${match.scoreAgainst || 0}`;
         const vs = match.opponent || '?';
         const comp = match.competition ? ` (${match.competition})` : '';
         const day = match.matchday ? ` J${match.matchday}` : '';
-        
+
         lines.push(`${i + 1}. ${match.team || '?'} ${result} ${vs}${comp}${day}`);
       });
-      
+
       await msg.reply(lines.join('\n'));
       return;
     }
@@ -1228,25 +1366,25 @@ client.on('messageCreate', async (msg) => {
     if (cmd === '!history-ids') {
       const limit = rest[0] ? Math.min(parseInt(rest[0], 10) || 10, 20) : 10;
       const matches = store.getMatchHistory(guildId, userId, limit);
-      
+
       if (matches.length === 0) {
         return void msg.reply("Aucun match dans l'historique.");
       }
-      
+
       const lines = [`📋 **Historique avec IDs** — ${matches.length} match(s)`];
       matches.forEach((match, i) => {
         const result = `${match.scoreFor || 0}-${match.scoreAgainst || 0}`;
         const vs = match.opponent || '?';
         const comp = match.competition ? ` (${match.competition})` : '';
         const day = match.matchday ? ` J${match.matchday}` : '';
-        
+
         lines.push(`**ID ${match.id}** — ${match.team || '?'} ${result} ${vs}${comp}${day}`);
       });
-      
+
       lines.push('');
       lines.push('💡 Utilise `!match-edit <ID> <propriété> <valeur>` pour éditer');
       lines.push('💡 Propriétés : opponent, scoreFor, scoreAgainst, competition, matchday');
-      
+
       await msg.reply(lines.join('\n'));
       return;
     }
@@ -1256,15 +1394,15 @@ client.on('messageCreate', async (msg) => {
       if (rest.length < 3) {
         return void msg.reply("Utilise : `!match-edit <ID> <propriété> <valeur>`");
       }
-      
+
       const [matchIdStr, property, ...valueParts] = rest;
       const matchId = parseInt(matchIdStr, 10);
       const value = valueParts.join(' ');
-      
+
       if (isNaN(matchId)) {
         return void msg.reply("L'ID doit être un nombre. Utilise `!history-ids` pour voir les IDs.");
       }
-      
+
       const validProps = {
         'opponent': 'opponent',
         'adversaire': 'opponent',
@@ -1282,14 +1420,14 @@ client.on('messageCreate', async (msg) => {
         'journee': 'matchday',
         'j': 'matchday'
       };
-      
+
       const mappedProp = validProps[property.toLowerCase()];
       if (!mappedProp) {
         return void msg.reply("Propriété inconnue. Propriétés disponibles : opponent, scoreFor, scoreAgainst, competition, matchday");
       }
-      
+
       const updates = {};
-      
+
       if (mappedProp === 'scoreFor' || mappedProp === 'scoreAgainst') {
         const score = parseInt(value, 10);
         if (isNaN(score) || score < 0) {
@@ -1309,9 +1447,9 @@ client.on('messageCreate', async (msg) => {
       } else {
         updates[mappedProp] = value;
       }
-      
+
       const success = store.updateMatchInHistory(guildId, userId, matchId, updates);
-      
+
       if (success) {
         await msg.reply(`✅ Match ID ${matchId} mis à jour : **${property}** → **${value}**`);
       } else {
@@ -1324,16 +1462,16 @@ client.on('messageCreate', async (msg) => {
       if (rest.length === 0) {
         return void msg.reply("Utilise : `!match-delete <ID>`\nUtilise `!history-ids` pour voir les IDs disponibles.");
       }
-      
+
       const matchIdStr = rest[0];
       const matchId = parseInt(matchIdStr, 10);
-      
+
       if (isNaN(matchId)) {
         return void msg.reply("L'ID doit être un nombre. Utilise `!history-ids` pour voir les IDs.");
       }
-      
+
       const success = store.deleteMatchFromHistory(guildId, userId, matchId);
-      
+
       if (success) {
         await msg.reply(`✅ Match ID ${matchId} supprimé de l'historique.`);
       } else {
@@ -1345,14 +1483,14 @@ client.on('messageCreate', async (msg) => {
     if (cmd === '!scorers') {
       const limit = rest[0] ? Math.min(parseInt(rest[0], 10) || 10, 20) : 10;
       const matches = store.getMatchHistory(guildId, userId, 100); // Récupérer plus de matchs pour les stats
-      
+
       if (matches.length === 0) {
         return void msg.reply("Aucun match dans l'historique pour calculer les statistiques des buteurs.");
       }
-      
+
       // Agrégation des buteurs
       const scorerStats = {};
-      
+
       matches.forEach(match => {
         if (Array.isArray(match.scorersFor)) {
           match.scorersFor.forEach(scorer => {
@@ -1368,11 +1506,11 @@ client.on('messageCreate', async (msg) => {
           });
         }
       });
-      
+
       if (Object.keys(scorerStats).length === 0) {
         return void msg.reply("Aucun buteur trouvé dans l'historique.");
       }
-      
+
       // Trier par nombre de buts décroissant
       const sortedScorers = Object.entries(scorerStats)
         .map(([name, stats]) => ({
@@ -1382,147 +1520,22 @@ client.on('messageCreate', async (msg) => {
         }))
         .sort((a, b) => b.goals - a.goals)
         .slice(0, limit);
-      
+
       const lines = [`⚽ **Top ${Math.min(limit, sortedScorers.length)} des buteurs** — ${matches.length} match(s) analysés`];
-      
+
       sortedScorers.forEach((scorer, i) => {
         const rank = i + 1;
         const emoji = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
         const goalText = scorer.goals > 1 ? 'buts' : 'but';
         const matchText = scorer.matches > 1 ? 'matchs' : 'match';
-        
+
         lines.push(`${emoji} **${scorer.name}** — ${scorer.goals} ${goalText} (${scorer.matches} ${matchText})`);
       });
-      
-      if (sortedScorers.length === 0) {
-        lines.push('Aucun buteur trouvé.');
-      }
-      
-      await msg.reply(lines.join('\n'));
-      return;
     }
-
-    // ===== NOUVELLE COMMANDE MERCATO =====
-    if (cmd === '!mercato') {
-      if (!st?.connection) {
-        await msg.reply("Je ne suis pas connecté. Lance d'abord `!multiplex`.");
-        return;
-      }
-
-      if (rest.length < 3) {
-        await msg.reply("Utilise : `!mercato <montant_millions> <club_origine> <joueur>`\nExemple : `!mercato 180 \"Paris Saint-Germain\" \"Kylian Mbappé\"`");
-        return;
-      }
-
-      // Récupérer le club de l'utilisateur
-      const m = getMatch(guildId, userId);
-      const userClub = m.team || store.getTeam(guildId, userId);
-      
-      if (!userClub) {
-        await msg.reply("Définis d'abord ton club avec `!me <club>` avant d'annoncer un transfert !");
-        return;
-      }
-
-      // NOUVEAU ORDRE : montant, club origine, puis joueur
-      const [amountStr, fromClub, ...playerNameParts] = rest;
-      const amount = parseInt(amountStr, 10);
-      const playerName = playerNameParts.join(' ');
-
-      if (isNaN(amount) || amount < 0) {
-        await msg.reply("Le montant doit être un nombre en millions d'euros (ex: 50 pour 50M€).");
-        return;
-      }
-
-      if (!fromClub.trim()) {
-        await msg.reply("Précise le club d'origine du joueur.");
-        return;
-      }
-
-      if (!playerName.trim()) {
-        await msg.reply("Précise le nom du joueur.");
-        return;
-      }
-
-      try {
-        // Récupérer le nom du coach depuis le store
-        const coach = store.getCoachProfile(guildId, userId);
-        const coachName = coach?.name || msg.member?.displayName || msg.author.username;
-
-        // Générer l'annonce audio avec le nom du coach
-        const audioPath = await generateMercatoAnnouncement(
-          playerName.replace(/['"]/g, ''), // Enlever les guillemets
-          amount,
-          fromClub.replace(/['"]/g, ''), // Enlever les guillemets du club aussi
-          userClub,
-          coachName // Passer le nom du coach pour l'audio aussi
-        );
-
-        // Jouer l'audio
-        const resource = createAudioResource(audioPath);
-        resource.metadata = { tempPath: audioPath };
-        enqueue(guildId, [resource]);
-
-        // Afficher le texte stylisé une fois tout prêt
-        const displayText = buildMercatoDisplayText(
-          playerName.replace(/['"]/g, ''),
-          amount,
-          fromClub.replace(/['"]/g, ''),
-          userClub,
-          coachName // Passer le nom du coach pour l'affichage aussi
-        );
-
-        await msg.channel.send(displayText);
-
-      } catch (error) {
-        console.error('[MERCATO] Erreur:', error);
-        await msg.reply("❌ Erreur lors de la génération de l'annonce mercato.");
-      }
-      return;
-    }
-
-  } catch (e) {
-    console.error('messageCreate error:', e);
-    try { await msg.reply("Oups, une erreur est survenue."); } catch { }
   }
-});
-
-// --- PANNEAU: interactions boutons ---
-client.on('interactionCreate', async (i) => {
-  if (!i.isButton()) return;
-  const [kind, targetUserId] = i.customId.split(':');
-  if (targetUserId !== i.user.id) {
-    return i.reply({ content: "Ce panneau ne t'est pas assigné. Utilise `!panel` pour le tien 😉", ephemeral: true });
-  }
-  const guildId = i.guildId;
-  const m = getMatch(guildId, i.user.id);
-  const st = getAudioState(guildId);
-
-  switch (kind) {
-    case 'goal_for':
-    case 'goal_against': {
-      if (!st?.connection) { return i.reply({ content: "Je ne suis pas connecté. Lance `!multiplex`.", ephemeral: true }); }
-      // save
-      m.hist.push({ prev: { ...m } });
-      if (kind === 'goal_for') m.for++; else m.against++;
-
-      // FIX: Utiliser buildGoalAnnouncement au lieu de buildGoalText
-      const cmd = kind === 'goal_for' ? '!g' : '!gc';
-      const text = buildGoalAnnouncement(m.team, m.opp, m.for, m.against, m.minute, null, cmd);
-
-      await enqueueJingleAndTTS(guildId, text);
-      await updateBoardMessage(i);
-      return i.deferUpdate();
-    }
-    case 'minp1': m.minute = Math.max(0, (m.minute || 0) + 1); await updateBoardMessage(i); return i.deferUpdate();
-    case 'minp5': m.minute = Math.max(0, (m.minute || 0) + 5); await updateBoardMessage(i); return i.deferUpdate();
-    case 'undo': {
-      const last = m.hist.pop();
-      if (last) { Object.assign(m, last.prev); await updateBoardMessage(i); return i.deferUpdate(); }
-      return i.reply({ content: "Rien à annuler.", ephemeral: true });
-    }
-    case 'mt': m.status = 'MT'; await updateBoardMessage(i); return i.deferUpdate();
-    case 'fin': m.status = 'FIN'; await updateBoardMessage(i); return i.deferUpdate();
-    default: return i.deferUpdate();
+  catch (e) {
+    console.error("Erreur lors du traitement de la commande :", e);
+    await msg.reply("Une erreur est survenue lors du traitement de la commande.");
   }
 });
 
