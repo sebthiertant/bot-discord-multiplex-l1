@@ -138,6 +138,8 @@ Vous devriez voir :
 - `!nextj` → passe à la journée suivante manuellement (autres compétitions)
 - `!season [saison]` → affiche ou définit la saison actuelle
 - `!setup <compétition> <journée> [saison]` → configuration rapide
+- `!matchday-reset` → remet le compteur de journée à J1
+- `!matchday-set <valeur>` → définit une valeur spécifique pour le compteur
 
 ### 🆕 Auto-incrémentation Ligue 1
 ```
@@ -166,6 +168,10 @@ Vous devriez voir :
 # Configuration Ligue 1 (recommandée)
 !me Angers
 !comp "Ligue 1"      # Les journées s'incrémentent automatiquement
+
+# Reset du compteur si nécessaire
+!matchday-reset      # Remet à J1
+!matchday-set 10     # Fixe à J10
 
 # Configuration autre compétition
 !me Angers
@@ -225,6 +231,12 @@ Vous devriez voir :
 
 ### Conférences de presse
 - `!conf [nombre_questions]` → génère des questions de conférence de presse contextuelles (2 par défaut)
+- `!conf --force [nombre_questions]` → force une nouvelle conférence même sans session active
+
+**Fonctionnement des conférences :**
+- **Automatiques** : Se déclenchent après 10 matchs terminés
+- **Interactives** : Questions posées une par une, tapez `!conf` pour la suivante
+- **Forcées** : Avec `--force`, affiche toutes les questions d'un coup
 
 ### Annonces Mercato (Style Fabrizio Romano)
 - `!mercato <montant_millions> <club_origine> <joueur>` → annonce de transfert vers ton club
@@ -259,12 +271,14 @@ L'annonce sera lue avec une voix masculine à l'accent italien en anglais, avec 
 !fin                 # → Automatiquement sauvé en J2
 
 # Pas besoin de !nextj ou !j <numéro> !
-!conf 3
-!scorers             # Top 10 des buteurs
-```
+!conf               # Session interactive (2 questions)
+!conf --force 3     # Mode forcé (3 questions d'un coup)
+!scorers            # Top 10 des buteurs
 
-### Annonce libre (hors suivi)
-- `!but-<club>-<buteur>` → joue le jingle + annonce TTS (n'affecte PAS le tableau)
+# Gestion du compteur si nécessaire
+!matchday-reset     # Remet à J1
+!matchday-set 15    # Fixe à J15
+```
 
 ## **Tableau récap (board)**
 
@@ -359,11 +373,13 @@ Jingle : utilisez un son libre de droits ou votre propre audio.
 
 !mt → !2nd → !fin
 
-!conf 2
+!conf 2 (ou !conf --force 2 pour mode direct)
 
 !history
 
 !scorers
+
+!matchday-reset (remet le compteur à J1)
 
 !boardset #multiplex-board (une seule fois)
 

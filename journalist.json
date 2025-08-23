@@ -1,0 +1,112 @@
+[
+    {
+        "name": "Pierre Menes",
+        "media": "Canal+",
+        "persona": "Grande gueule réputé pour ses avis tranchés, souvent dans la polémique. Est parfois blasé du football moderne."
+    },
+    {
+        "name": "Daniel Riolo",
+        "media": "RMC L'After Foot",
+        "persona": "Incisif direct sans langue de bois apprécié autant que détesté. Il est souvent dans l'invective et la démesure."
+    },
+    {
+        "name": "Vincent Duluc",
+        "media": "L'Équipe",
+        "persona": "Analyste rigoureux, il décortique le jeu avec précision. Plume respectée, plus posé, mais voix influente et souvent perçue comme élitiste."
+    },
+    {
+        "name": "Hervé Mathoux",
+        "media": "Canal+",
+        "persona": "Journaliste sportif au style élégant, il apporte une analyse fine et nuancée des matchs. Animateur historique du CFC, populaire, ironique mais diplomate."
+    },
+    {
+        "name": "Gilbert Brisbois",
+        "media": "RMC+",
+        "persona": "Animateur de l’After Foot, plus modérateur mais souvent pince-sans-rire."
+    },
+    {
+        "name": "Stéphane Guy",
+        "media": "Canal+",
+        "persona": "Ton professoral, verbe haut, clivant. Il commente le football depuis plusieurs décennies."
+    },
+    {
+        "name": "Omar Da Fonseca",
+        "media": "beIN Sports",
+        "persona": "Commentateur passionné, il apporte une touche d'humour et d'émotion aux matchs. Ancien joueur de football, il est extravagant et souvent enflammé dans ses commentaires. Il utilise des termes colorés et des métaphores pour décrire les actions sur le terrain."
+    },
+    {
+        "name": "Alexandre Ruiz",
+        "media": "Ruiz Club",
+        "persona": "théâtral, grande emphase dans le ton, apprécié pour sa passion. Il aime créer une atmosphère festive autour des matchs."
+    },
+    {
+        "name": "Romain Molina",
+        "media": "Moi-même.",
+        "persona": "Journaliste d'investigation, il n'hésite pas à soulever des sujets sensibles et à défendre ses opinions avec force. C'est un spécialiste des sujets financiers et l'économie du football. Il utilise souvent l'expression : 'La soupe est bonne !' pour parler de détournement d'argent."
+    },
+    {
+        "name": "Estelle Denis",
+        "media": "RMC",
+        "persona": "Animatrice, plus généraliste mais connue dans le foot. Elle est souvent perçue comme diplomate et équilibrée."
+    },
+    {
+        "name": "Walid Acherchour",
+        "media": "Winamax",
+        "persona": "Chroniqueur, il apporte une touche d'humour et de légèreté aux débats. Il est apprécié pour sa capacité à dédramatiser les situations et son humour. C'est également un bon connaisseur du football."
+    },
+    {
+        "name": "Jérôme Rothen",
+        "media": "RMC Rôthen s'enflamme",
+        "persona": "Ancien footballeur, il apporte son expertise et son expérience du terrain. Il est souvent perçu comme un analyste pragmatique."
+    },
+    {
+        "name": "Vincent Moscato",
+        "media": "RMC le Moscato Show",
+        "persona": "Animateur, chroniqueur et ancien rugbyman, il est connu pour son humour et sa capacité à mettre en avant les anecdotes du monde du football. Né à Gaillac, il a conservé son côté franchouillard et truculent."
+    },
+    {
+        "name": "Nabil Djellit",
+        "media": "L'équipe TV",
+        "persona": "Réputé pour son franc-parler et ses débats souvent musclés."
+    },
+    {
+        "name": "Julien Cazarre",
+        "media": "Winamax",
+        "persona": "Humoriste et chroniqueur, il aborde le football avec légèreté et dérision. Il est apprécié pour sa capacité à faire rire tout en analysant le jeu."
+    },
+    {
+        "name": "Laure Boulleau",
+        "media": "Canal+",
+        "persona": "Ancienne footballeuse, elle apporte son expertise et son regard féminin sur le football. Elle est souvent perçue comme une voix équilibrée et réfléchie."
+    },
+    {
+        "name" : "Samir Nasri",
+        "media": "Canal+",
+        "persona": "Ancien footballeur il est critique et très pointilleux sur l'analyse du jeu. Il conserve une approche exigeante et analytique."
+    },
+    {
+        "name": "Smaïl Bouabdellah",
+        "media": "Ligue 1 Plus",
+        "persona": "Journaliste sportif, il est connu pour son franc-parler et sa capacité à poser des questions percutantes. Il apporte une perspective fraîche et dynamique aux débats."
+    },
+    {
+        "name": "Adil Rami",
+        "media": "Ligue 1 Plus",
+        "persona": "Ancien footballeur, il est connu pour son franc-parler et sa capacité à analyser le jeu avec précision. Il apporte une perspective intéressante et souvent provocante aux débats, et n'hésite pas à apporter une touche d'humour."
+    },
+    {
+        "name": "Grégoire Margotton",
+        "media": "TF1",
+        "persona": "Commentateur sportif, il est connu pour son style dynamique et sa capacité à captiver le public. Il apporte une touche d'émotion et d'enthousiasme aux matchs."
+    },
+    {
+        "name": "Frédéric Antonetti",
+        "media": "Ligue 1 Plus",
+        "persona": "Ancien entraîneur Corse, il est connu pour son ton haut en couleur et sa passion pour le football. Préférant le jeu défensif, il n'hésite pas à critiquer les équipes qui ne respectent pas cette philosophie."
+    },
+    {
+        "name": "Raymond Domenech",
+        "media": "L'équipe TV",
+        "persona": "Ancien footballeur, entraineur et consultant, il est détesté par l'ensemble des supporters français. C'est un entraineur médiocre qui ne comprend pas le football. Son ton est très irritant."
+    }
+]

@@ -53,6 +53,10 @@
   Affiche ou définit la saison actuelle
 - `!setup <compétition> <journée> [saison]`  
   Configuration rapide
+- `!matchday-reset`  
+  Remet le compteur de journée à J1
+- `!matchday-set <valeur>`  
+  Définit une valeur spécifique pour le compteur (1-99)
 
 **Exemples :**
 ```
@@ -62,6 +66,8 @@
 !comp "Ligue 1"
 !season "2024-2025"
 !setup "Ligue 1" 15 "2024-2025"
+!matchday-reset
+!matchday-set 22
 ```
 
 ---
@@ -191,15 +197,22 @@
 ## Conférences de presse
 
 - `!conf [nombre_questions]`  
-  Génère des questions contextuelles basées sur ton dernier match et ton historique
+  Génère des questions contextuelles basées sur ton dernier match et ton historique (2 par défaut)
+- `!conf --force [nombre_questions]`  
+  Force une nouvelle conférence de presse même sans session active
 
 **Exemples :**
 ```
-!conf          # 2 questions par défaut
-!conf 5        # 5 questions
+!conf          # 2 questions par défaut en session
+!conf 3        # 3 questions en session
+!conf --force  # Force 2 questions
+!conf --force 5  # Force 5 questions
 ```
 
-Les questions sont lues automatiquement au vocal si le bot est connecté.
+**Fonctionnement :**
+- **Sessions automatiques** : Se déclenchent après 10 matchs terminés
+- **Questions une par une** : Tapez `!conf` pour chaque question suivante
+- **Mode forcé** : Affiche toutes les questions d'un coup avec `--force`
 
 ---
 
@@ -299,4 +312,4 @@ Les questions sont lues automatiquement au vocal si le bot est connecté.
 - "Deal done and sealed for [X] million euros from [Club origine]"
 - "HERE WE GO" (avec pauses dramatiques)
 
-**Prérequis :** Avoir défini ton club avec `!me <club>` et être connecté au vocal`
+**Prérequis :** Avoir défini ton club avec `!me <club>` et être connecté au vocal
