@@ -7,7 +7,7 @@ const OPENERS = [
   { text: "Quel but !", weight: 5 },
   { text: "Magnifique !", weight: 5 },
   { text: "Superbe !", weight: 5 },
-  { text: "Hé ! C'est au fond !", weight: 5 },
+  { text: "C'est au fond !", weight: 5 },
 
   // Communes (poids 3)
   { text: "Quel bombasso !", weight: 1.5 },
@@ -42,7 +42,7 @@ const CONCEDING_OPENERS = [
   { text: "Quelle bourde défensive !", weight: 2 },
   { text: "L'arrière-garde qui flanche !", weight: 2 },
   { text: "Les défenseurs qui perdent pied !", weight: 2 },
-  { text: "Oh ! Le manque de concentration défensive !", weight: 2 },
+  { text: "Quel manque de concentration défensive !", weight: 2 },
   { text: "Que ça manque d'aggressivité derrière !", weight: 2 },
   
   // Rares (poids 0.1)

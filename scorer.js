@@ -45,23 +45,22 @@ const FINISHING_SCORER_TEMPLATES = [
   { text: "{scorer} qui achève le travail !", weight: 0.1 }
 ];
 
-// Templates pour parler du buteur en premier (nouvelles phrases)
+// Templates pour parler du buteur en premier
 const SCORER_FIRST_TEMPLATES = [
-  // Communes (poids 3) - Éviter doublon avec "frappe"
   { text: "{scorer} qui ouvre le score", weight: 3 },
   { text: "{scorer} trouve la faille", weight: 3 },
-  { text: "{scorer} qui fait mouche", weight: 3 }, // Changé "frappe fort" → "fait mouche"
-  { text: "{scorer} fait trembler les filets", weight: 3 }, // Déplacé ici depuis SCORER_TEMPLATES
+  { text: "{scorer} qui fait mouche", weight: 3 },
+  { text: "{scorer} fait trembler les filets", weight: 3 },
   
   // Moins communes (poids 2)
-  { text: "{scorer} surgit dans la surface", weight: 2 },
+  { text: "{scorer} qui surgit dans la surface", weight: 2 },
   { text: "{scorer} fait parler la poudre", weight: 2 },
   { text: "{scorer} place sa frappe", weight: 2 },
   { text: "{scorer} ajuste parfaitement", weight: 2 },
   
   // Rares (poids 0.1)
   { text: "{scorer} sort de sa boîte", weight: 0.1 },
-  { text: "{scorer} envoie une praline", weight: 0.1 },
+  { text: "{scorer} envoie une praline tout droit dans la lucarne !", weight: 0.1 },
   { text: "{scorer} dégaine plus vite que son ombre", weight: 0.1 }
 ];
 
@@ -82,9 +81,9 @@ const MINIMAL_SCORER_TEMPLATES = [
   { text: "{scorer} qui donne l'avantage !", weight: 2 },
   
   // Rares (poids 0.1)
-  { text: "{scorer} crucifie !", weight: 0.1 },
-  { text: "{scorer} transperce !", weight: 0.1 },
-  { text: "{scorer} atomise !", weight: 0.1 }
+  { text: "{scorer} crucifie le gardien !", weight: 0.1 },
+  { text: "{scorer} transperce le gardien !", weight: 0.1 },
+  { text: "{scorer} atomise le gardien !", weight: 0.1 }
 ];
 
 // Templates pour les scores humiliants spéciaux
