@@ -938,6 +938,84 @@ client.on('messageCreate', async (msg) => {
       return;
     }
 
+     // ===== NOUVELLE COMMANDE MERCATO =====
+    if (cmd === '!mercato') {
+      if (!st?.connection) {
+        await msg.reply("Je ne suis pas connecté. Lance d'abord `!multiplex`.");
+        return;
+      }
+
+      if (rest.length < 3) {
+        await msg.reply("Utilise : `!mercato <montant_millions> <club_origine> <joueur>`\nExemple : `!mercato 180 \"Paris Saint-Germain\" \"Kylian Mbappé\"`");
+        return;
+      }
+
+      // Récupérer le club de l'utilisateur
+      const m = getMatch(guildId, userId);
+      const userClub = m.team || store.getTeam(guildId, userId);
+
+      if (!userClub) {
+        await msg.reply("Définis d'abord ton club avec `!me <club>` avant d'annoncer un transfert !");
+        return;
+      }
+
+      // NOUVEAU ORDRE : montant, club origine, puis joueur
+      const [amountStr, fromClub, ...playerNameParts] = rest;
+      const amount = parseInt(amountStr, 10);
+      const playerName = playerNameParts.join(' ');
+
+      if (isNaN(amount) || amount < 0) {
+        await msg.reply("Le montant doit être un nombre en millions d'euros (ex: 50 pour 50M€).");
+        return;
+      }
+
+      if (!fromClub.trim()) {
+        await msg.reply("Précise le club d'origine du joueur.");
+        return;
+      }
+
+      if (!playerName.trim()) {
+        await msg.reply("Précise le nom du joueur.");
+        return;
+      }
+
+      try {
+        // Récupérer le nom du coach depuis le store
+        const coach = store.getCoachProfile(guildId, userId);
+        const coachName = coach?.name || msg.member?.displayName || msg.author.username;
+
+        // Générer l'annonce audio avec le nom du coach
+        const audioPath = await generateMercatoAnnouncement(
+          playerName.replace(/['"]/g, ''), // Enlever les guillemets
+          amount,
+          fromClub.replace(/['"]/g, ''), // Enlever les guillemets du club aussi
+          userClub,
+          coachName // Passer le nom du coach pour l'audio aussi
+        );
+
+        // Jouer l'audio
+        const resource = createAudioResource(audioPath);
+        resource.metadata = { tempPath: audioPath };
+        enqueue(guildId, [resource]);
+
+        // Afficher le texte stylisé une fois tout prêt
+        const displayText = buildMercatoDisplayText(
+          playerName.replace(/['"]/g, ''),
+          amount,
+          fromClub.replace(/['"]/g, ''),
+          userClub,
+          coachName // Passer le nom du coach pour l'affichage aussi
+        );
+
+        await msg.channel.send(displayText);
+
+      } catch (error) {
+        console.error('[MERCATO] Erreur:', error);
+        await msg.reply("❌ Erreur lors de la génération de l'annonce mercato.");
+      }
+      return;
+    }
+
     if (cmd === '!conf') {
       // NOUVEAU : Vérifier si --force est utilisé
       const isForced = rest.includes('--force');
@@ -967,7 +1045,7 @@ client.on('messageCreate', async (msg) => {
           const ttsPath = path.join(ASSETS_DIR, `press_q${activeSession.currentIndex}_${Date.now()}.mp3`);
           await synthToFile(questionText, ttsPath, "fr-FR-HenriNeural");
           const res = createAudioResource(ttsPath);
-          res.metadata = { tempPath: ttsPath };
+          res.metadata = { tempPath: ttsPath }; // AJOUT: Marquer pour suppression
           enqueue(guildId, [res]);
         }
 
@@ -1040,13 +1118,14 @@ client.on('messageCreate', async (msg) => {
         const presentationPath = path.join(ASSETS_DIR, `press_presentation_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
         await synthToFile(presentation, presentationPath, "fr-FR-HenriNeural");
         const presRes = createAudioResource(presentationPath);
-        presRes.metadata = { tempPath: presentationPath };
+        presRes.metadata = { tempPath: presentationPath }; // AJOUT: Marquer pour suppression
         enqueue(guildId, [presRes]);
 
         for (const q of qs) {
           const ttsPath = path.join(ASSETS_DIR, `press_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
           await synthToFile(q, ttsPath, "fr-FR-HenriNeural");
-          const res = createAudioResource(ttsPath); res.metadata = { tempPath: ttsPath };
+          const res = createAudioResource(ttsPath); 
+          res.metadata = { tempPath: ttsPath }; // AJOUT: Marquer pour suppression
           enqueue(guildId, [res]);
         }
       }
