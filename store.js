@@ -205,6 +205,11 @@ function resetPressCounter(guildId, userId) {
   saveProfiles();
 }
 
+function cancelPressSession(guildId, userId) {
+  const key = `${guildId}-${userId}`;
+  activePressSessions.delete(key);
+}
+
 function getPressCounter(guildId, userId) {
   ensureProfile(guildId, userId);
   const profile = profiles.guilds[guildId][userId];
@@ -265,6 +270,7 @@ module.exports = {
   getNextMatchday,
   incrementPressCounter,
   resetPressCounter,
+  cancelPressSession,
   getPressCounter,
   startPressSession,
   getPressSession,
