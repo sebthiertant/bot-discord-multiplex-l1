@@ -822,6 +822,7 @@ client.on('messageCreate', async (msg) => {
             store.resetPressCounter(guildId, userId);
 
             replyMessage += `\n\n🎙️ **CONFÉRENCE DE PRESSE DÉCLENCHÉE !**\n${pressResult.presentation}\n\n💡 Tapez \`!conf\` pour commencer la conférence de presse.`;
+            replyMessage += `\n\n❌ Tapez \`!no\` pour annuler la conférence de presse.`;
 
             // NOUVEAU : Lire la présentation en audio si connecté
             const st = getAudioState(guildId);
@@ -1086,6 +1087,19 @@ client.on('messageCreate', async (msg) => {
     }
 
     // ====== NOUVELLES COMMANDES COACH PROFILE ======
+
+    if (cmd === '!no') {
+      // Vérifier s'il y a une session de conférence de presse active
+      const activeSession = store.getPressSession(guildId, userId);
+      
+      if (!activeSession) {
+        return void msg.reply("❌ Aucune conférence de presse en cours à annuler.");
+      }
+      
+      store.cancelPressSession(guildId, userId);
+      await msg.reply("✅ Conférence de presse annulée.");
+      return;
+    }
 
     if (cmd === '!coach') {
       const profile = store.getCoachProfile(guildId, userId);

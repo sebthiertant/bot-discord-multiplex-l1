@@ -17,6 +17,7 @@ Minimal : ~4%
 
 ### Modes de fonctionnement
 - **Session interactive** : Questions une par une avec `!conf`
+- **Annulation** : Un coach peut annuler une conférence de presse en cours à tout moment avec la commande `!no`. Si aucune session n’est active, le bot le précise.
 - **Mode forcé** : Toutes les questions d'un coup avec `!conf --force`
 - **Nombre par défaut** : 2 questions (configurable via `PRESS_NUM_DEFAULT`)
 

@@ -62,7 +62,6 @@ const CLEAN_SHEET_TEMPLATES = [
   // Score à zéro (clean sheet)
   { text: "Clean sheet pour {winningTeam} ! Victoire {winningScore} à zéro face à {losingTeam}.", weight: 3 },
   { text: "Cage inviolée ! {winningTeam} bat {losingTeam} {winningScore} à zéro.", weight: 2 },
-  { text: "Porte fermée ! {winningTeam} gagne {winningScore} à zéro contre {losingTeam}.", weight: 2 }
 ];
 
 const GOALLESS_DRAW_TEMPLATES = [
