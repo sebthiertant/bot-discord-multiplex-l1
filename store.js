@@ -185,8 +185,8 @@ function incrementPressCounter(guildId, userId) {
     profile.coach.pressCounter = 0;
   }
   
-  // Incrémentation aléatoire de 1 à 4 avec chances égales
-  const increment = Math.floor(Math.random() * 4) + 1;
+  // Incrémentation aléatoire de 2 à 4 avec chances égales
+  const increment = Math.floor(Math.random() * 3) + 2;
   profile.coach.pressCounter = Math.min(10, profile.coach.pressCounter + increment);
   
   console.log(`[PRESS] Compteur incrémenté de +${increment} pour ${userId} → ${profile.coach.pressCounter}/10`);

@@ -8,8 +8,9 @@ const OPENERS = [
   { text: "Magnifique !", weight: 5 },
   { text: "Superbe !", weight: 5 },
   { text: "C'est au fond !", weight: 5 },
+  { text: "But !", weight: 5 },
 
-  // Communes (poids 3)
+  // Communes (poids 1.5)
   { text: "Quel bombasso !", weight: 1.5 },
   { text: "La frappe !", weight: 1.5 },
   { text: "Quel tir !", weight: 1.5 },
@@ -17,7 +18,7 @@ const OPENERS = [
   { text: "Quelle mine !", weight: 1.5 },
   { text: "C'est dans la lucarne !", weight: 1.5 },
   
-  // Moins communes (poids 2)
+  // Moins communes (poids 0.8)
   { text: "Oh la minasse !", weight: 0.8 },
   { text: "C'est la surprise du chef !", weight: 0.8 },
   { text: "BADABOUM !", weight: 0.8 },

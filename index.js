@@ -742,18 +742,18 @@ client.on('messageCreate', async (msg) => {
       m.minute = 90;
       m.minuteLabel = '90';
       
-      // NOUVEAU : Générer et jouer l'annonce de fin de match (SANS jingle)
+      // Générer et jouer l'annonce de fin de match (SANS jingle)
       if (st?.connection && m.team && m.opp) {
         const endingText = buildEndingAnnouncement(m.team, m.opp, m.for, m.against);
         await enqueueTTSOnly(guildId, endingText);
       }
       
-      // NOUVEAU : Sauvegarder automatiquement le match dans l'historique
+      // Sauvegarder automatiquement le match dans l'historique
       if (m.team && m.opp) {
         const coach = store.getCoachProfile(guildId, userId);
         const competition = coach?.currentCompetition || 'Ligue 1';
 
-        // NOUVEAU : Auto-incrémentation pour Ligue 1
+        // Auto-incrémentation pour la journée de Ligue 1
         let matchday = null;
         if (competition === 'Ligue 1') {
           matchday = store.getNextMatchday(guildId, userId);
@@ -782,7 +782,7 @@ client.on('messageCreate', async (msg) => {
 
         let replyMessage = `🔴 Fin du match. (Ajouté automatiquement à l'historique${autoInfo})`;
 
-        // NOUVEAU : Déclenchement automatique de la conférence de presse
+        // Déclenchement automatique de la conférence de presse
         if (pressCounter >= 10) {
           try {
             // Générer la conférence de presse
@@ -837,8 +837,6 @@ client.on('messageCreate', async (msg) => {
             console.error('[PRESS AUTO] Erreur génération:', error);
             replyMessage += `\n\n🎙️ Conférence de presse déclenchée mais erreur de génération. Utilisez \`!conf --force\`.`;
           }
-        } else {
-          replyMessage += `\n📊 Compteur conférence : ${pressCounter}/10`;
         }
 
         await msg.reply(replyMessage);
