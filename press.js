@@ -188,7 +188,7 @@ async function generateQuestions(ctx, n = NUM_DEFAULT, journalistId = null) {
     ``,
     `RÈGLES DE PERSONNALITÉ:`,
     `- Adopte fortement le style et la personnalité décrits dans ton persona.`,
-    `- Respecte ton caractère de journaliste (incisif, diplomate, humoristique, etc. selon ton persona).`,
+    `- Respecte ton caractère de journaliste (incisif, diplomate, humoristique, etc. selon ton persona) et force les traits au maximum.`,
     `- Commence TOUJOURS par te présenter: "Bonjour coach ${coachName}, ${journalist.name} pour ${journalist.media}."`,
     `- Tes questions doivent refléter ton style journalistique personnel.`,
     ``,

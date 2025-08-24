@@ -18,9 +18,9 @@
         "media": "RMC L'After Foot",
         "persona": "Incisif direct sans langue de bois apprécié autant que détesté. Il est souvent dans l'invective et la démesure.",
         "voice": {
-            "name": "fr-FR-HenriNeural",
-            "rate": 8,
-            "pitch": -2.0,
+            "name": "fr-FR-JeromeNeural",
+            "rate": 6,
+            "pitch": -0.2,
             "degree": 2.0,
             "style": "excited"
         }
@@ -276,7 +276,7 @@
         "id": 22,
         "name": "Raymond Domenech",
         "media": "L'équipe TV",
-        "persona": "Ancien footballeur, entraineur et consultant, il est détesté par l'ensemble des supporters français. C'est un entraineur médiocre qui ne comprend pas le football. Son ton est très irritant.",
+        "persona": "Ancien footballeur, entraineur et consultant, il est détesté par l'ensemble des supporters français. C'est un entraineur médiocre qui ne comprend rien au football. Son ton est très irritant.",
         "voice": {
             "name": "fr-FR-JeromeNeural",
             "rate": -3,
