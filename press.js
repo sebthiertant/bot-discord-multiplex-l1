@@ -24,12 +24,33 @@ try {
 function getRandomJournalist() {
   if (!journalists.length) {
     return {
+      id: 0,
       name: 'Journaliste',
       media: 'Média Sport',
       persona: 'Journaliste sportif professionnel',
+      voice: null // Pas de config voice = utilise les défauts
     };
   }
   return journalists[Math.floor(Math.random() * journalists.length)];
+}
+
+/**
+ * Récupère un journaliste par son ID
+ */
+function getJournalistById(id) {
+  const journalist = journalists.find(j => j.id === id);
+  if (!journalist) {
+    console.warn(`[PRESS] Journaliste ID ${id} introuvable, utilisation d'un journaliste aléatoire`);
+    return getRandomJournalist();
+  }
+  return journalist;
+}
+
+/**
+ * Retourne la liste de tous les journalistes (pour debug)
+ */
+function getAllJournalists() {
+  return journalists.map(j => ({ id: j.id, name: j.name, media: j.media }));
 }
 
 /**
@@ -47,10 +68,11 @@ function getRandomJournalist() {
  *     ...
  *   ]
  * }
+ * journalistId: (optionnel) ID spécifique du journaliste à utiliser
  */
-async function generateQuestions(ctx, n = NUM_DEFAULT) {
+async function generateQuestions(ctx, n = NUM_DEFAULT, journalistId = null) {
   const count = Math.min(Math.max(parseInt(n || NUM_DEFAULT, 10), 1), 5);
-  const journalist = getRandomJournalist();
+  const journalist = journalistId ? getJournalistById(journalistId) : getRandomJournalist();
 
   // DEBUG - Log du contexte reçu
   console.log('[PRESS DEBUG] Contexte reçu:', {
@@ -59,6 +81,8 @@ async function generateQuestions(ctx, n = NUM_DEFAULT) {
     for: ctx?.for,
     against: ctx?.against,
     requestedQuestions: count,
+    journalistId: journalistId,
+    selectedJournalist: journalist?.name
   });
 
   // Schéma strict avec le nombre exact de questions
@@ -301,4 +325,4 @@ async function generateQuestions(ctx, n = NUM_DEFAULT) {
   }
 }
 
-module.exports = { generateQuestions };
+module.exports = { generateQuestions, getAllJournalists };
