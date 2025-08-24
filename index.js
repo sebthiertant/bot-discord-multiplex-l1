@@ -54,6 +54,7 @@ const ASSETS_DIR = 'assets';
 const JINGLE_PATH = path.join(ASSETS_DIR, 'but.mp3');
 const UCL_ANTHEM_PATH = path.join(ASSETS_DIR, 'ucl_anthem.mp3'); // Hymne Ligue des Champions
 const EUROPA_ANTHEM_PATH = path.join(ASSETS_DIR, 'europa_anthem.mp3'); // Hymne Europa League
+const FINAL_WHISTLE_PATH = path.join(ASSETS_DIR, 'final_whistle.mp3'); // Sifflet final
 
 // --- ÉTATS ---
 // Audio par serveur
@@ -737,17 +738,24 @@ client.on('messageCreate', async (msg) => {
 
     if (cmd === '!fin') {
       const st = getAudioState(guildId);
-      
+
       m.status = 'FIN';
       m.minute = 90;
       m.minuteLabel = '90';
-      
+
       // Générer et jouer l'annonce de fin de match (SANS jingle)
       if (st?.connection && m.team && m.opp) {
+        // 1. Jouer le coup de sifflet final
+        const whistleRes = createAudioResource(FINAL_WHISTLE_PATH);
+        // 2. Générer le TTS de l'annonce de fin
         const endingText = buildEndingAnnouncement(m.team, m.opp, m.for, m.against);
-        await enqueueTTSOnly(guildId, endingText);
+        const ttsPath = path.join(ASSETS_DIR, `tts_${Date.now()}.mp3`);
+        await synthToFile(endingText, ttsPath, "fr-FR-HenriNeural");
+        const ttsRes = createAudioResource(ttsPath); ttsRes.metadata = { tempPath: ttsPath };
+        // 3. Enqueue whistle then TTS
+        enqueue(guildId, [whistleRes, ttsRes]);
       }
-      
+
       // Sauvegarder automatiquement le match dans l'historique
       if (m.team && m.opp) {
         const coach = store.getCoachProfile(guildId, userId);
