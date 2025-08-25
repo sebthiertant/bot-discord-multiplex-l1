@@ -764,9 +764,11 @@ client.on('messageCreate', async (msg) => {
         // Auto-incrémentation pour la journée de Ligue 1
         let matchday = null;
         if (competition === 'Ligue 1') {
-          matchday = store.getNextMatchday(guildId, userId);
-          // Mettre à jour le profil coach avec la nouvelle journée
-          store.updateCoachProfile(guildId, userId, { currentMatchday: matchday });
+          // FIX: Utiliser le compteur du profil coach au lieu de calculer depuis l'historique
+          const currentMatchday = coach?.currentMatchday || 1;
+          matchday = currentMatchday;
+          // Mettre à jour le profil coach avec la nouvelle journée (incrémentation pour le prochain match)
+          store.updateCoachProfile(guildId, userId, { currentMatchday: currentMatchday + 1 });
         } else {
           // Pour les autres compétitions, utiliser la journée définie manuellement
           matchday = coach?.currentMatchday || null;
@@ -1309,7 +1311,8 @@ client.on('messageCreate', async (msg) => {
         const current = coach?.currentCompetition || 'Ligue 1';
 
         if (current === 'Ligue 1') {
-          const nextMatchday = store.getNextMatchday(guildId, userId);
+          // FIX: Afficher le compteur actuel au lieu de calculer
+          const nextMatchday = coach?.currentMatchday || 1;
           return void msg.reply(`🏆 Compétition actuelle : **${current}** (J${nextMatchday} auto-calculée)\n💡 Les journées s'incrémentent automatiquement en Ligue 1`);
         } else {
           const matchday = coach?.currentMatchday ? ` (J${coach.currentMatchday})` : '';
@@ -1333,7 +1336,8 @@ client.on('messageCreate', async (msg) => {
         const competition = coach?.currentCompetition || 'Ligue 1';
 
         if (competition === 'Ligue 1') {
-          const nextMatchday = store.getNextMatchday(guildId, userId);
+          // FIX: Afficher le compteur actuel au lieu de calculer
+          const nextMatchday = coach?.currentMatchday || 1;
           return void msg.reply(`📅 Prochaine journée Ligue 1 : **J${nextMatchday}** (auto-calculée)\n💡 Les journées s'incrémentent automatiquement en Ligue 1`);
         } else {
           const current = coach?.currentMatchday || 'Non définie';
@@ -1457,9 +1461,12 @@ client.on('messageCreate', async (msg) => {
       if (matchday) {
         finalMatchday = parseInt(matchday, 10);
       } else if (finalCompetition === 'Ligue 1') {
-        finalMatchday = store.getNextMatchday(guildId, userId);
+        // FIX: Utiliser le compteur du profil coach au lieu de getNextMatchday()
+        const coach = store.getCoachProfile(guildId, userId);
+        const currentMatchday = coach?.currentMatchday || 1;
+        finalMatchday = currentMatchday;
         // Mettre à jour le profil coach avec la nouvelle journée
-        store.updateCoachProfile(guildId, userId, { currentMatchday: finalMatchday });
+        store.updateCoachProfile(guildId, userId, { currentMatchday: currentMatchday + 1 });
       } else {
         finalMatchday = coach?.currentMatchday || null;
       }

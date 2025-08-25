@@ -301,10 +301,10 @@
 
 **Exemples :**
 ```
-!mercato 180 "Paris Saint-Germain" "Kylian Mbappé"
-!mercato 150 "Manchester City" "Erling Haaland"
-!mercato 0 "Paris Saint-Germain" "Lionel Messi"  # Transfert libre
-!mercato 15 Marseille "Adrien Rabiot"
+!mercato 180 Paris-Saint-Germain Kylian Mbappé
+!mercato 18 Slavia-Prague Jäkel
+!mercato 0 Paris-Saint-Germain Lionel Messi  # Transfert libre
+!mercato 15 Marseille Adrien Rabiot
 ```
 
 **Format de l'annonce :**
