@@ -54,6 +54,13 @@ function buildSSML(text, voiceName, customParams = null) {
   const pitch = params.pitch !== undefined ? params.pitch : PITCH_ST;
   const style = params.style || STYLE;
   
+  // Déterminer la langue en fonction de la voix
+  const voiceLang = voiceName.startsWith('es-ES') ? 'es-ES' : 
+                   voiceName.startsWith('en-US') ? 'en-US' : 
+                   voiceName.startsWith('it-IT') ? 'it-IT' : 
+                   voiceName.startsWith('de-DE') ? 'de-DE' : 
+                   'fr-FR';
+  
   const body = `
     <mstts:express-as style="${style}" styledegree="${degree}">
       <prosody rate="${rate >= 0 ? '+' : ''}${rate}%"
@@ -66,8 +73,8 @@ function buildSSML(text, voiceName, customParams = null) {
 <speak version="1.0"
        xmlns="http://www.w3.org/2001/10/synthesis"
        xmlns:mstts="https://www.w3.org/2001/mstts"
-       xml:lang="fr-FR">
-  <voice name="${voiceName}" xml:lang="fr-FR">
+       xml:lang="${voiceLang}">
+  <voice name="${voiceName}" xml:lang="${voiceLang}">
     ${body}
   </voice>
 </speak>`.trim();
@@ -75,11 +82,19 @@ function buildSSML(text, voiceName, customParams = null) {
 
 function buildSimpleSSML(text, voiceName) {
   const safe = escapeXml(String(text));
+  
+  // Déterminer la langue en fonction de la voix
+  const voiceLang = voiceName.startsWith('es-ES') ? 'es-ES' : 
+                   voiceName.startsWith('en-US') ? 'en-US' : 
+                   voiceName.startsWith('it-IT') ? 'it-IT' : 
+                   voiceName.startsWith('de-DE') ? 'de-DE' : 
+                   'fr-FR';
+  
   return `
 <speak version="1.0"
        xmlns="http://www.w3.org/2001/10/synthesis"
-       xml:lang="fr-FR">
-  <voice name="${voiceName}" xml:lang="fr-FR">
+       xml:lang="${voiceLang}">
+  <voice name="${voiceName}" xml:lang="${voiceLang}">
     ${safe}
   </voice>
 </speak>`.trim();

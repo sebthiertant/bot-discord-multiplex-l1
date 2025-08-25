@@ -827,34 +827,7 @@ client.on('messageCreate', async (msg) => {
             // NOUVEAU : Lire la présentation en audio si connecté
             const st = getAudioState(guildId);
             if (st?.connection) {
-              const presentationPath = path.join(ASSETS_DIR, `press_auto_presentation_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
-              
-              // Utiliser la voix du journaliste pour la présentation
-              const journalistVoice = journalist?.voice?.name || "fr-FR-HenriNeural";
-              const voiceParams = journalist?.voice ? {
-                rate: journalist.voice.rate,
-                pitch: journalist.voice.pitch,
-                degree: journalist.voice.degree,
-                style: journalist.voice.style
-              } : null;
-              
-              try {
-                await synthToFile(pressResult.presentation, presentationPath, journalistVoice, voiceParams);
-                const presRes = createAudioResource(presentationPath);
-                presRes.metadata = { tempPath: presentationPath };
-                enqueue(guildId, [presRes]);
-              } catch (ttsError) {
-                console.error(`[TTS] Erreur avec voix ${journalistVoice}:`, ttsError.message);
-                // Fallback vers voix par défaut
-                try {
-                  await synthToFile(pressResult.presentation, presentationPath, "fr-FR-HenriNeural", null);
-                  const presRes = createAudioResource(presentationPath);
-                  presRes.metadata = { tempPath: presentationPath };
-                  enqueue(guildId, [presRes]);
-                } catch (fallbackError) {
-                  console.error('[TTS] Échec même avec voix par défaut:', fallbackError.message);
-                }
-              }
+              await playPressAudio(guildId, pressResult.presentation, journalist, 'presentation');
             }
 
           } catch (error) {
@@ -993,13 +966,12 @@ client.on('messageCreate', async (msg) => {
       const activeSession = store.getPressSession(guildId, userId);
 
       if (activeSession) {
-        // Continuer la session active (même si --force est présent, on continue la session en cours)
+        // Continuer la session active
         const currentQ = activeSession.questions[activeSession.currentIndex];
         const isLastQuestion = activeSession.currentIndex === activeSession.questions.length - 1;
 
         let questionText = currentQ;
         if (isLastQuestion) {
-          // Ajouter "Merci." à la dernière question
           questionText += questionText.endsWith('.') ? ' Merci.' : '. Merci.';
         }
 
@@ -1009,34 +981,7 @@ client.on('messageCreate', async (msg) => {
         // Lire la question au vocal si connecté
         const st = getAudioState(guildId);
         if (st?.connection) {
-          const ttsPath = path.join(ASSETS_DIR, `press_q${activeSession.currentIndex}_${Date.now()}.mp3`);
-          
-          // Utiliser la voix du journaliste pour les questions
-          const journalistVoice = activeSession.journalist?.voice?.name || "fr-FR-HenriNeural";
-          const voiceParams = activeSession.journalist?.voice ? {
-            rate: activeSession.journalist.voice.rate,
-            pitch: activeSession.journalist.voice.pitch,
-            degree: activeSession.journalist.voice.degree,
-            style: activeSession.journalist.voice.style
-          } : null;
-          
-          try {
-            await synthToFile(questionText, ttsPath, journalistVoice, voiceParams);
-            const res = createAudioResource(ttsPath);
-            res.metadata = { tempPath: ttsPath };
-            enqueue(guildId, [res]);
-          } catch (ttsError) {
-            console.error(`[TTS] Erreur avec voix ${journalistVoice}:`, ttsError.message);
-            // Fallback vers voix par défaut
-            try {
-              await synthToFile(questionText, ttsPath, "fr-FR-HenriNeural", null);
-              const res = createAudioResource(ttsPath);
-              res.metadata = { tempPath: ttsPath };
-              enqueue(guildId, [res]);
-            } catch (fallbackError) {
-              console.error('[TTS] Échec même avec voix par défaut:', fallbackError.message);
-            }
-          }
+          await playPressAudio(guildId, questionText, activeSession.journalist, 'question');
         }
 
         // Avancer ou terminer la session
@@ -1103,50 +1048,15 @@ client.on('messageCreate', async (msg) => {
       const fullMessage = `🎙️ **Conférence de presse (forcée)** — ${matchInfo}${debugInfo}\n\n${presentation}\n\n${lines}`;
       await msg.channel.send({ content: fullMessage });
 
-      // Lire toutes les questions
+      // Lire la présentation et toutes les questions
       const st = getAudioState(guildId);
       if (st?.connection) {
-        const presentationPath = path.join(ASSETS_DIR, `press_presentation_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
-        
-        // Utiliser la voix du journaliste pour la présentation forcée
-        const journalistVoice = journalist?.voice?.name || "fr-FR-HenriNeural";
-        const voiceParams = journalist?.voice ? {
-          rate: journalist.voice.rate,
-          pitch: journalist.voice.pitch,
-          degree: journalist.voice.degree,
-          style: journalist.voice.style
-        } : null;
-        
-        try {
-          await synthToFile(presentation, presentationPath, journalistVoice, voiceParams);
-          const presRes = createAudioResource(presentationPath);
-          presRes.metadata = { tempPath: presentationPath };
-          enqueue(guildId, [presRes]);
+        // Présentation
+        await playPressAudio(guildId, presentation, journalist, 'presentation');
 
-          for (const q of qs) {
-            const ttsPath = path.join(ASSETS_DIR, `press_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
-            await synthToFile(q, ttsPath, journalistVoice, voiceParams);
-            const res = createAudioResource(ttsPath); res.metadata = { tempPath: ttsPath };
-            enqueue(guildId, [res]);
-          }
-        } catch (ttsError) {
-          console.error(`[TTS] Erreur avec voix ${journalistVoice}:`, ttsError.message);
-          // Fallback silencieux vers voix par défaut
-          try {
-            await synthToFile(presentation, presentationPath, "fr-FR-HenriNeural", null);
-            const presRes = createAudioResource(presentationPath);
-            presRes.metadata = { tempPath: presentationPath };
-            enqueue(guildId, [presRes]);
-
-            for (const q of qs) {
-              const ttsPath = path.join(ASSETS_DIR, `press_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
-              await synthToFile(q, ttsPath, "fr-FR-HenriNeural", null);
-              const res = createAudioResource(ttsPath); res.metadata = { tempPath: ttsPath };
-              enqueue(guildId, [res]);
-            }
-          } catch (fallbackError) {
-            console.error('[TTS] Échec même avec voix par défaut:', fallbackError.message);
-          }
+        // Questions une par une
+        for (const q of qs) {
+          await playPressAudio(guildId, q, journalist, 'question');
         }
       }
 
@@ -1698,5 +1608,41 @@ async function playAudioFile(guildId, filePath) {
   } catch (error) {
     console.error(`[AUDIO] Erreur lecture ${filePath}:`, error);
     return false;
+  }
+}
+
+// Nouvelle fonction pour gérer l'audio des conférences de presse de manière cohérente
+async function playPressAudio(guildId, text, journalist, type = 'question') {
+  const ttsPath = path.join(ASSETS_DIR, `press_${type}_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
+  
+  // Utiliser la voix du journaliste de manière cohérente
+  const journalistVoice = journalist?.voice?.name || "fr-FR-HenriNeural";
+  
+  // IMPORTANT : Créer un objet voiceParams complet et cohérent
+  const voiceParams = journalist?.voice ? {
+    rate: journalist.voice.rate || 0,
+    pitch: journalist.voice.pitch || 0,
+    degree: journalist.voice.degree || 1.7,
+    style: journalist.voice.style || "calm"
+  } : null;
+  
+  try {
+    await synthToFile(text, ttsPath, journalistVoice, voiceParams);
+    const res = createAudioResource(ttsPath);
+    res.metadata = { tempPath: ttsPath };
+    enqueue(guildId, [res]);
+    console.log(`[PRESS AUDIO] Joué avec voix ${journalistVoice} (${type})`);
+  } catch (ttsError) {
+    console.error(`[TTS] Erreur avec voix ${journalistVoice}:`, ttsError.message);
+    // Fallback vers voix par défaut avec paramètres par défaut
+    try {
+      await synthToFile(text, ttsPath, "fr-FR-HenriNeural", null);
+      const res = createAudioResource(ttsPath);
+      res.metadata = { tempPath: ttsPath };
+      enqueue(guildId, [res]);
+      console.log(`[PRESS AUDIO] Fallback réussi pour ${type}`);
+    } catch (fallbackError) {
+      console.error('[TTS] Échec même avec voix par défaut:', fallbackError.message);
+    }
   }
 }
