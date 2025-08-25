@@ -22,7 +22,7 @@
 - `!whoami`  
   Affiche ton club mémorisé
 - `!forgetme`  
-  Oublie ton club mémorisé
+  Oublie ton club mémorisé 
 
 ### Profil Coach
 
@@ -198,6 +198,8 @@
 
 - `!conf [nombre_questions]`  
   Génère des questions contextuelles basées sur ton dernier match et ton historique (2 par défaut)
+- `!no` 
+  Annule le déclenchement de la conférence de presse. 
 - `!conf --force [nombre_questions]`  
   Force une nouvelle conférence de presse même sans session active
 

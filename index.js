@@ -54,6 +54,7 @@ const ASSETS_DIR = 'assets';
 const JINGLE_PATH = path.join(ASSETS_DIR, 'but.mp3');
 const UCL_ANTHEM_PATH = path.join(ASSETS_DIR, 'ucl_anthem.mp3'); // Hymne Ligue des Champions
 const EUROPA_ANTHEM_PATH = path.join(ASSETS_DIR, 'europa_anthem.mp3'); // Hymne Europa League
+const FINAL_WHISTLE_PATH = path.join(ASSETS_DIR, 'final_whistle.mp3'); // Sifflet final
 
 // --- ÉTATS ---
 // Audio par serveur
@@ -737,17 +738,24 @@ client.on('messageCreate', async (msg) => {
 
     if (cmd === '!fin') {
       const st = getAudioState(guildId);
-      
+
       m.status = 'FIN';
       m.minute = 90;
       m.minuteLabel = '90';
-      
+
       // Générer et jouer l'annonce de fin de match (SANS jingle)
       if (st?.connection && m.team && m.opp) {
+        // 1. Jouer le coup de sifflet final
+        const whistleRes = createAudioResource(FINAL_WHISTLE_PATH);
+        // 2. Générer le TTS de l'annonce de fin
         const endingText = buildEndingAnnouncement(m.team, m.opp, m.for, m.against);
-        await enqueueTTSOnly(guildId, endingText);
+        const ttsPath = path.join(ASSETS_DIR, `tts_${Date.now()}.mp3`);
+        await synthToFile(endingText, ttsPath, "fr-FR-HenriNeural");
+        const ttsRes = createAudioResource(ttsPath); ttsRes.metadata = { tempPath: ttsPath };
+        // 3. Enqueue whistle then TTS
+        enqueue(guildId, [whistleRes, ttsRes]);
       }
-      
+
       // Sauvegarder automatiquement le match dans l'historique
       if (m.team && m.opp) {
         const coach = store.getCoachProfile(guildId, userId);
@@ -934,6 +942,84 @@ client.on('messageCreate', async (msg) => {
       return;
     }
 
+     // ===== NOUVELLE COMMANDE MERCATO =====
+    if (cmd === '!mercato') {
+      if (!st?.connection) {
+        await msg.reply("Je ne suis pas connecté. Lance d'abord `!multiplex`.");
+        return;
+      }
+
+      if (rest.length < 3) {
+        await msg.reply("Utilise : `!mercato <montant_millions> <club_origine> <joueur>`\nExemple : `!mercato 180 \"Paris Saint-Germain\" \"Kylian Mbappé\"`");
+        return;
+      }
+
+      // Récupérer le club de l'utilisateur
+      const m = getMatch(guildId, userId);
+      const userClub = m.team || store.getTeam(guildId, userId);
+
+      if (!userClub) {
+        await msg.reply("Définis d'abord ton club avec `!me <club>` avant d'annoncer un transfert !");
+        return;
+      }
+
+      // NOUVEAU ORDRE : montant, club origine, puis joueur
+      const [amountStr, fromClub, ...playerNameParts] = rest;
+      const amount = parseInt(amountStr, 10);
+      const playerName = playerNameParts.join(' ');
+
+      if (isNaN(amount) || amount < 0) {
+        await msg.reply("Le montant doit être un nombre en millions d'euros (ex: 50 pour 50M€).");
+        return;
+      }
+
+      if (!fromClub.trim()) {
+        await msg.reply("Précise le club d'origine du joueur.");
+        return;
+      }
+
+      if (!playerName.trim()) {
+        await msg.reply("Précise le nom du joueur.");
+        return;
+      }
+
+      try {
+        // Récupérer le nom du coach depuis le store
+        const coach = store.getCoachProfile(guildId, userId);
+        const coachName = coach?.name || msg.member?.displayName || msg.author.username;
+
+        // Générer l'annonce audio avec le nom du coach
+        const audioPath = await generateMercatoAnnouncement(
+          playerName.replace(/['"]/g, ''), // Enlever les guillemets
+          amount,
+          fromClub.replace(/['"]/g, ''), // Enlever les guillemets du club aussi
+          userClub,
+          coachName // Passer le nom du coach pour l'audio aussi
+        );
+
+        // Jouer l'audio
+        const resource = createAudioResource(audioPath);
+        resource.metadata = { tempPath: audioPath };
+        enqueue(guildId, [resource]);
+
+        // Afficher le texte stylisé une fois tout prêt
+        const displayText = buildMercatoDisplayText(
+          playerName.replace(/['"]/g, ''),
+          amount,
+          fromClub.replace(/['"]/g, ''),
+          userClub,
+          coachName // Passer le nom du coach pour l'affichage aussi
+        );
+
+        await msg.channel.send(displayText);
+
+      } catch (error) {
+        console.error('[MERCATO] Erreur:', error);
+        await msg.reply("❌ Erreur lors de la génération de l'annonce mercato.");
+      }
+      return;
+    }
+
     if (cmd === '!conf') {
       // NOUVEAU : Vérifier si --force est utilisé et extraire l'ID journaliste
       const isForced = rest.includes('--force');
@@ -982,6 +1068,11 @@ client.on('messageCreate', async (msg) => {
         const st = getAudioState(guildId);
         if (st?.connection) {
           await playPressAudio(guildId, questionText, activeSession.journalist, 'question');
+          const ttsPath = path.join(ASSETS_DIR, `press_q${activeSession.currentIndex}_${Date.now()}.mp3`);
+          await synthToFile(questionText, ttsPath, "fr-FR-HenriNeural");
+          const res = createAudioResource(ttsPath);
+          res.metadata = { tempPath: ttsPath }; // AJOUT: Marquer pour suppression
+          enqueue(guildId, [res]);
         }
 
         // Avancer ou terminer la session
@@ -1053,10 +1144,20 @@ client.on('messageCreate', async (msg) => {
       if (st?.connection) {
         // Présentation
         await playPressAudio(guildId, presentation, journalist, 'presentation');
+        const presentationPath = path.join(ASSETS_DIR, `press_presentation_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
+        await synthToFile(presentation, presentationPath, "fr-FR-HenriNeural");
+        const presRes = createAudioResource(presentationPath);
+        presRes.metadata = { tempPath: presentationPath }; // AJOUT: Marquer pour suppression
+        enqueue(guildId, [presRes]);
 
         // Questions une par une
         for (const q of qs) {
           await playPressAudio(guildId, q, journalist, 'question');
+          const ttsPath = path.join(ASSETS_DIR, `press_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
+          await synthToFile(q, ttsPath, "fr-FR-HenriNeural");
+          const res = createAudioResource(ttsPath); 
+          res.metadata = { tempPath: ttsPath }; // AJOUT: Marquer pour suppression
+          enqueue(guildId, [res]);
         }
       }
 
