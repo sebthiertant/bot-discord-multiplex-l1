@@ -835,11 +835,7 @@ client.on('messageCreate', async (msg) => {
             // NOUVEAU : Lire la présentation en audio si connecté
             const st = getAudioState(guildId);
             if (st?.connection) {
-              const presentationPath = path.join(ASSETS_DIR, `press_auto_presentation_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
-              await synthToFile(pressResult.presentation, presentationPath, "fr-FR-HenriNeural");
-              const presRes = createAudioResource(presentationPath);
-              presRes.metadata = { tempPath: presentationPath };
-              enqueue(guildId, [presRes]);
+              await playPressAudio(guildId, pressResult.presentation, journalist, 'presentation');
             }
 
           } catch (error) {
@@ -1025,22 +1021,43 @@ client.on('messageCreate', async (msg) => {
     }
 
     if (cmd === '!conf') {
-      // NOUVEAU : Vérifier si --force est utilisé
+      // NOUVEAU : Vérifier si --force est utilisé et extraire l'ID journaliste
       const isForced = rest.includes('--force');
       const filteredRest = rest.filter(arg => arg !== '--force');
-      const n = filteredRest[0] ? parseInt(filteredRest[0], 10) : undefined;
+      let journalistId = null;
+      let n = undefined;
+
+      // Parser les arguments restants : soit un nombre (questions) soit un ID journaliste
+      if (filteredRest.length > 0) {
+        const firstArg = parseInt(filteredRest[0], 10);
+        if (!isNaN(firstArg)) {
+          if (isForced && filteredRest.length > 1) {
+            // Mode debug : !conf --force [questions] [journalistId]
+            n = firstArg;
+            const secondArg = parseInt(filteredRest[1], 10);
+            if (!isNaN(secondArg)) {
+              journalistId = secondArg;
+            }
+          } else if (isForced) {
+            // Mode debug : !conf --force [journalistId]
+            journalistId = firstArg;
+          } else {
+            // Mode normal : !conf [questions]
+            n = firstArg;
+          }
+        }
+      }
 
       // NOUVEAU : Vérifier s'il y a une session active
       const activeSession = store.getPressSession(guildId, userId);
 
       if (activeSession) {
-        // Continuer la session active (même si --force est présent, on continue la session en cours)
+        // Continuer la session active
         const currentQ = activeSession.questions[activeSession.currentIndex];
         const isLastQuestion = activeSession.currentIndex === activeSession.questions.length - 1;
 
         let questionText = currentQ;
         if (isLastQuestion) {
-          // Ajouter "Merci." à la dernière question
           questionText += questionText.endsWith('.') ? ' Merci.' : '. Merci.';
         }
 
@@ -1050,6 +1067,7 @@ client.on('messageCreate', async (msg) => {
         // Lire la question au vocal si connecté
         const st = getAudioState(guildId);
         if (st?.connection) {
+          await playPressAudio(guildId, questionText, activeSession.journalist, 'question');
           const ttsPath = path.join(ASSETS_DIR, `press_q${activeSession.currentIndex}_${Date.now()}.mp3`);
           await synthToFile(questionText, ttsPath, "fr-FR-HenriNeural");
           const res = createAudioResource(ttsPath);
@@ -1108,7 +1126,7 @@ client.on('messageCreate', async (msg) => {
         }))
       };
 
-      const pressResult = await generateQuestions(ctx, n || 2);
+      const pressResult = await generateQuestions(ctx, n || 2, journalistId);
       const presentation = pressResult.presentation || `Bonjour coach ${ctx.coach}, journaliste.`;
       const qs = pressResult.questions || [];
       const journalist = pressResult.journalist || { name: "Journaliste", media: "Média Sport" };
@@ -1116,20 +1134,25 @@ client.on('messageCreate', async (msg) => {
       // Mode classique avec --force : afficher toutes les questions d'un coup
       const lines = qs.map((q, i) => `**Q${i + 1}.** ${q}`).join('\n');
       const matchInfo = `${ctx.team} ${ctx.for}-${ctx.against} ${ctx.opp}${ctx.matchday ? ` (J${ctx.matchday})` : ''}`;
-
-      const fullMessage = `🎙️ **Conférence de presse (forcée)** — ${matchInfo}\n\n${presentation}\n\n${lines}`;
+      
+      const debugInfo = journalistId ? ` — Debug: ${journalist.name} (ID: ${journalist.id})` : '';
+      const fullMessage = `🎙️ **Conférence de presse (forcée)** — ${matchInfo}${debugInfo}\n\n${presentation}\n\n${lines}`;
       await msg.channel.send({ content: fullMessage });
 
-      // Lire toutes les questions
+      // Lire la présentation et toutes les questions
       const st = getAudioState(guildId);
       if (st?.connection) {
+        // Présentation
+        await playPressAudio(guildId, presentation, journalist, 'presentation');
         const presentationPath = path.join(ASSETS_DIR, `press_presentation_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
         await synthToFile(presentation, presentationPath, "fr-FR-HenriNeural");
         const presRes = createAudioResource(presentationPath);
         presRes.metadata = { tempPath: presentationPath }; // AJOUT: Marquer pour suppression
         enqueue(guildId, [presRes]);
 
+        // Questions une par une
         for (const q of qs) {
+          await playPressAudio(guildId, q, journalist, 'question');
           const ttsPath = path.join(ASSETS_DIR, `press_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
           await synthToFile(q, ttsPath, "fr-FR-HenriNeural");
           const res = createAudioResource(ttsPath); 
@@ -1141,14 +1164,41 @@ client.on('messageCreate', async (msg) => {
       return;
     }
 
-    if (cmd === '!board') {
-      const meta = store.getBoard(guildId);
-      if (!meta) {
-        return void msg.reply("Aucun tableau configuré. Lance `!boardset #multiplex-board` d’abord.");
+    if (cmd === '!journalistes' || cmd === '!journalists') {
+      const { getAllJournalists } = require('./press');
+      const allJournalists = getAllJournalists();
+      
+      if (allJournalists.length === 0) {
+        return void msg.reply("Aucun journaliste disponible.");
       }
-      await updateBoardMsg(client, guildId);
-      const ch = await client.channels.fetch(meta.channelId).catch(() => null);
-      return void msg.reply(`📋 Tableau mis à jour dans ${ch ? ch.toString() : '<inconnu>'}.`);
+
+      const lines = ["📰 **Liste des journalistes disponibles :**"];
+      allJournalists.forEach(j => {
+        lines.push(`**ID ${j.id}** — ${j.name} (${j.media})`);
+      });
+      
+      lines.push('');
+      lines.push('💡 Utilise `!conf --force [journalistId]` pour forcer un journaliste spécifique');
+      lines.push('💡 Exemple : `!conf --force 2` pour Daniel Riolo');
+
+      // Diviser en plusieurs messages si trop long
+      const maxLength = 2000;
+      let currentMessage = '';
+      
+      for (const line of lines) {
+        if ((currentMessage + line + '\n').length > maxLength) {
+          await msg.reply(currentMessage);
+          currentMessage = line + '\n';
+        } else {
+          currentMessage += line + '\n';
+        }
+      }
+      
+      if (currentMessage.trim()) {
+        await msg.reply(currentMessage);
+      }
+      
+      return;
     }
 
 
@@ -1659,5 +1709,41 @@ async function playAudioFile(guildId, filePath) {
   } catch (error) {
     console.error(`[AUDIO] Erreur lecture ${filePath}:`, error);
     return false;
+  }
+}
+
+// Nouvelle fonction pour gérer l'audio des conférences de presse de manière cohérente
+async function playPressAudio(guildId, text, journalist, type = 'question') {
+  const ttsPath = path.join(ASSETS_DIR, `press_${type}_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
+  
+  // Utiliser la voix du journaliste de manière cohérente
+  const journalistVoice = journalist?.voice?.name || "fr-FR-HenriNeural";
+  
+  // IMPORTANT : Créer un objet voiceParams complet et cohérent
+  const voiceParams = journalist?.voice ? {
+    rate: journalist.voice.rate || 0,
+    pitch: journalist.voice.pitch || 0,
+    degree: journalist.voice.degree || 1.7,
+    style: journalist.voice.style || "calm"
+  } : null;
+  
+  try {
+    await synthToFile(text, ttsPath, journalistVoice, voiceParams);
+    const res = createAudioResource(ttsPath);
+    res.metadata = { tempPath: ttsPath };
+    enqueue(guildId, [res]);
+    console.log(`[PRESS AUDIO] Joué avec voix ${journalistVoice} (${type})`);
+  } catch (ttsError) {
+    console.error(`[TTS] Erreur avec voix ${journalistVoice}:`, ttsError.message);
+    // Fallback vers voix par défaut avec paramètres par défaut
+    try {
+      await synthToFile(text, ttsPath, "fr-FR-HenriNeural", null);
+      const res = createAudioResource(ttsPath);
+      res.metadata = { tempPath: ttsPath };
+      enqueue(guildId, [res]);
+      console.log(`[PRESS AUDIO] Fallback réussi pour ${type}`);
+    } catch (fallbackError) {
+      console.error('[TTS] Échec même avec voix par défaut:', fallbackError.message);
+    }
   }
 }
