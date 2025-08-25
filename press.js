@@ -5,8 +5,8 @@ const path = require('path');
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const PRESS_MODEL = process.env.PRESS_MODEL || 'gpt-4o'; // ou 'gpt-5' si dispo
-const NUM_DEFAULT = Math.max(1, parseInt(process.env.PRESS_NUM_DEFAULT || '3', 10)); // CHANGÉ: 3 par défaut au lieu de 2
+const PRESS_MODEL = process.env.PRESS_MODEL || 'gpt-4o';
+const NUM_DEFAULT = Math.max(1, parseInt(process.env.PRESS_NUM_DEFAULT || '3', 10));
 
 // Charger la liste des journalistes
 let journalists = [];
@@ -94,10 +94,8 @@ async function generateQuestions(ctx, n = NUM_DEFAULT, journalistId = null) {
     selectedJournalist: journalist?.name
   });
 
-  // NOUVEAU: Demander toujours plus de questions à l'IA pour avoir du choix
-  const questionsToGenerate = Math.max(count + 2, 5); // Au minimum 5, ou count+2
+  const questionsToGenerate = Math.max(count + 2, 5);
 
-  // Schéma strict avec plus de questions générées
   const schema = {
     type: 'object',
     properties: {
