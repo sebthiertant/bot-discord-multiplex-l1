@@ -135,7 +135,7 @@
         "media": "Winamax",
         "persona": "Chroniqueur, il apporte une touche d'humour et de légèreté aux débats. Il est apprécié pour sa capacité à dédramatiser les situations et son humour. C'est également un bon connaisseur du football.",
         "voice": {
-            "name": "fr-FR-HenriNeural",
+            "name": "fr-FR-ClaudeNeural",
                 "rate": 2,
                 "pitch": 0.1,
                 "degree": 0.8,
@@ -161,7 +161,7 @@
         "media": "RMC le Moscato Show",
         "persona": "Animateur, chroniqueur et ancien rugbyman, il est connu pour son humour et sa capacité à mettre en avant les anecdotes du monde du football. Né à Gaillac, il a conservé son côté franchouillard et truculent.",
         "voice": {
-            "name": "fr-FR-HenriNeural",
+            "name": "fr-FR-ClaudeNeural",
                 "rate": 2,
                 "pitch": -0.3,
                 "degree": 2,
@@ -187,8 +187,8 @@
         "media": "Winamax",
         "persona": "Humoriste et chroniqueur, il aborde le football avec légèreté et dérision. Il est apprécié pour sa capacité à faire rire tout en analysant le jeu.",
         "voice": {
-            "name": "fr-FR-HenriNeural",
-                "rate": 0,
+            "name": "fr-FR-ClaudeNeural",
+                "rate": 3,
                 "pitch": -0.1,
                 "degree": 2,
             "style": "cheerful"
@@ -239,7 +239,7 @@
         "media": "Ligue 1 Plus",
         "persona": "Ancien footballeur, il est connu pour son franc-parler et sa capacité à analyser le jeu avec précision. Il apporte une perspective intéressante et souvent provocante aux débats, et n'hésite pas à apporter une touche d'humour.",
         "voice": {
-            "name": "fr-FR-HenriNeural",
+            "name": "fr-FR-ClaudeNeural",
                 "rate": 1.2,
                 "pitch": 0.3,
                 "degree": 2,

@@ -6,7 +6,7 @@ const path = require('path');
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const PRESS_MODEL = process.env.PRESS_MODEL || 'gpt-4o'; // ou 'gpt-5' si dispo
-const NUM_DEFAULT = Math.max(1, parseInt(process.env.PRESS_NUM_DEFAULT || '2', 10));
+const NUM_DEFAULT = Math.max(1, parseInt(process.env.PRESS_NUM_DEFAULT || '3', 10)); // CHANGÉ: 3 par défaut au lieu de 2
 
 // Charger la liste des journalistes
 let journalists = [];
@@ -70,6 +70,15 @@ function getAllJournalists() {
  * }
  * journalistId: (optionnel) ID spécifique du journaliste à utiliser
  */
+function shuffleArray(array) {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
 async function generateQuestions(ctx, n = NUM_DEFAULT, journalistId = null) {
   const count = Math.min(Math.max(parseInt(n || NUM_DEFAULT, 10), 1), 5);
   const journalist = journalistId ? getJournalistById(journalistId) : getRandomJournalist();
@@ -85,7 +94,10 @@ async function generateQuestions(ctx, n = NUM_DEFAULT, journalistId = null) {
     selectedJournalist: journalist?.name
   });
 
-  // Schéma strict avec le nombre exact de questions
+  // NOUVEAU: Demander toujours plus de questions à l'IA pour avoir du choix
+  const questionsToGenerate = Math.max(count + 2, 5); // Au minimum 5, ou count+2
+
+  // Schéma strict avec plus de questions générées
   const schema = {
     type: 'object',
     properties: {
@@ -106,8 +118,8 @@ async function generateQuestions(ctx, n = NUM_DEFAULT, journalistId = null) {
           required: ['text'],
           additionalProperties: false,
         },
-        minItems: count,
-        maxItems: count,
+        minItems: questionsToGenerate,
+        maxItems: questionsToGenerate,
       },
     },
     required: ['presentation', 'questions'],
@@ -255,8 +267,7 @@ async function generateQuestions(ctx, n = NUM_DEFAULT, journalistId = null) {
           schema,
         },
       },
-      // L'API "chat.completions" attend "max_tokens"
-      max_tokens: 800,
+      max_tokens: 1000, // AUGMENTÉ: plus de tokens pour plus de questions
     });
 
     // Extraction robuste
@@ -269,6 +280,7 @@ async function generateQuestions(ctx, n = NUM_DEFAULT, journalistId = null) {
         questions: [
           'Quel regard portez-vous sur la prestation globale de votre équipe ?',
           'Le tournant du match selon vous ?',
+          'Comment analysez-vous cette performance ?',
         ].slice(0, count),
         journalist,
       };
@@ -294,7 +306,15 @@ async function generateQuestions(ctx, n = NUM_DEFAULT, journalistId = null) {
         parsed?.questions?.map?.((q) => (typeof q === 'string' ? q : q?.text)).filter(Boolean) ||
         [];
 
-      result.questions = parsedQs;
+      // NOUVEAU: Sélection aléatoire des questions
+      if (parsedQs.length > count) {
+        const shuffledQuestions = shuffleArray(parsedQs);
+        result.questions = shuffledQuestions.slice(0, count);
+        console.log(`[PRESS DEBUG] ${parsedQs.length} questions générées, ${count} sélectionnées aléatoirement`);
+      } else {
+        result.questions = parsedQs.slice(0, count);
+        console.log(`[PRESS DEBUG] ${parsedQs.length} questions générées, toutes utilisées`);
+      }
     } catch (err) {
       console.error('[PRESS DEBUG] Erreur parsing JSON:', err, 'Contenu:', raw);
       // on garde les valeurs par défaut
@@ -304,12 +324,13 @@ async function generateQuestions(ctx, n = NUM_DEFAULT, journalistId = null) {
       result.questions = [
         'Quel regard portez-vous sur la prestation globale de votre équipe ?',
         'Le tournant du match selon vous ?',
+        'Comment analysez-vous cette performance ?',
       ].slice(0, count);
     }
 
     return {
       presentation: result.presentation,
-      questions: result.questions.slice(0, count),
+      questions: result.questions, // Déjà limitées au bon nombre
       journalist, // retourner le journaliste sélectionné
     };
   } catch (e) {
@@ -319,6 +340,7 @@ async function generateQuestions(ctx, n = NUM_DEFAULT, journalistId = null) {
       questions: [
         "Votre analyse à chaud du match ?",
         "Un mot sur vos choix tactiques aujourd'hui ?",
+        "Comment analysez-vous cette performance ?",
       ].slice(0, count),
       journalist,
     };

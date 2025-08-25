@@ -821,7 +821,7 @@ client.on('messageCreate', async (msg) => {
               }))
             };
 
-            const pressResult = await generateQuestions(ctx, 2);
+            const pressResult = await generateQuestions(ctx, 3);
             const journalist = pressResult.journalist || { name: "Journaliste", media: "Média Sport" };
             const questions = pressResult.questions || [];
 
@@ -1021,13 +1021,13 @@ client.on('messageCreate', async (msg) => {
     }
 
     if (cmd === '!conf') {
-      // NOUVEAU : Vérifier si --force est utilisé et extraire l'ID journaliste
+      // Vérifier si --force est utilisé et extraire l'ID journaliste
       const isForced = rest.includes('--force');
       const filteredRest = rest.filter(arg => arg !== '--force');
       let journalistId = null;
       let n = undefined;
 
-      // Parser les arguments restants : soit un nombre (questions) soit un ID journaliste
+      // FIX: Parsing des arguments amélioré
       if (filteredRest.length > 0) {
         const firstArg = parseInt(filteredRest[0], 10);
         if (!isNaN(firstArg)) {
@@ -1039,8 +1039,14 @@ client.on('messageCreate', async (msg) => {
               journalistId = secondArg;
             }
           } else if (isForced) {
-            // Mode debug : !conf --force [journalistId]
-            journalistId = firstArg;
+            // Mode debug : !conf --force [journalistId ou questions]
+            // Si l'argument est >= 1 et <= 5, c'est probablement le nombre de questions
+            // Si l'argument est > 5, c'est probablement un ID journaliste
+            if (firstArg >= 1 && firstArg <= 5) {
+              n = firstArg; // Nombre de questions
+            } else {
+              journalistId = firstArg; // ID journaliste
+            }
           } else {
             // Mode normal : !conf [questions]
             n = firstArg;
@@ -1048,7 +1054,7 @@ client.on('messageCreate', async (msg) => {
         }
       }
 
-      // NOUVEAU : Vérifier s'il y a une session active
+      // Vérifier s'il y a une session active
       const activeSession = store.getPressSession(guildId, userId);
 
       if (activeSession) {
@@ -1068,11 +1074,6 @@ client.on('messageCreate', async (msg) => {
         const st = getAudioState(guildId);
         if (st?.connection) {
           await playPressAudio(guildId, questionText, activeSession.journalist, 'question');
-          const ttsPath = path.join(ASSETS_DIR, `press_q${activeSession.currentIndex}_${Date.now()}.mp3`);
-          await synthToFile(questionText, ttsPath, "fr-FR-HenriNeural");
-          const res = createAudioResource(ttsPath);
-          res.metadata = { tempPath: ttsPath }; // AJOUT: Marquer pour suppression
-          enqueue(guildId, [res]);
         }
 
         // Avancer ou terminer la session
@@ -1086,12 +1087,12 @@ client.on('messageCreate', async (msg) => {
         return;
       }
 
-      // NOUVEAU : Si pas de session active et pas de --force, refuser
+      // Si pas de session active et pas de --force, refuser
       if (!isForced) {
         return void msg.reply("❌ Aucune conférence de presse en cours. Les conférences se déclenchent automatiquement après plusieurs matchs ou utilisez `!conf --force` pour en forcer une.");
       }
 
-      // NOUVEAU : Logique pour démarrer une nouvelle conférence (SEULEMENT si forcée)
+      // Logique pour démarrer une nouvelle conférence (SEULEMENT si forcée)
       const coach = store.getCoachProfile(guildId, userId);
       const recentMatches = store.getMatchHistory(guildId, userId, 5);
 
@@ -1126,7 +1127,7 @@ client.on('messageCreate', async (msg) => {
         }))
       };
 
-      const pressResult = await generateQuestions(ctx, n || 2, journalistId);
+      const pressResult = await generateQuestions(ctx, n || 3, journalistId); // FIX: 3 par défaut
       const presentation = pressResult.presentation || `Bonjour coach ${ctx.coach}, journaliste.`;
       const qs = pressResult.questions || [];
       const journalist = pressResult.journalist || { name: "Journaliste", media: "Média Sport" };
@@ -1139,25 +1140,15 @@ client.on('messageCreate', async (msg) => {
       const fullMessage = `🎙️ **Conférence de presse (forcée)** — ${matchInfo}${debugInfo}\n\n${presentation}\n\n${lines}`;
       await msg.channel.send({ content: fullMessage });
 
-      // Lire la présentation et toutes les questions
+      // FIX: Supprimer la duplication - utiliser SEULEMENT playPressAudio
       const st = getAudioState(guildId);
       if (st?.connection) {
         // Présentation
         await playPressAudio(guildId, presentation, journalist, 'presentation');
-        const presentationPath = path.join(ASSETS_DIR, `press_presentation_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
-        await synthToFile(presentation, presentationPath, "fr-FR-HenriNeural");
-        const presRes = createAudioResource(presentationPath);
-        presRes.metadata = { tempPath: presentationPath }; // AJOUT: Marquer pour suppression
-        enqueue(guildId, [presRes]);
 
         // Questions une par une
         for (const q of qs) {
           await playPressAudio(guildId, q, journalist, 'question');
-          const ttsPath = path.join(ASSETS_DIR, `press_${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`);
-          await synthToFile(q, ttsPath, "fr-FR-HenriNeural");
-          const res = createAudioResource(ttsPath); 
-          res.metadata = { tempPath: ttsPath }; // AJOUT: Marquer pour suppression
-          enqueue(guildId, [res]);
         }
       }
 
@@ -1704,6 +1695,7 @@ async function playAudioFile(guildId, filePath) {
 
   try {
     const resource = createAudioResource(filePath);
+
     enqueue(guildId, [resource]);
     return true;
   } catch (error) {
