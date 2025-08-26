@@ -4,9 +4,24 @@
 
 ---
 
+## 🆕 Slash Commandes
+
+Le bot supporte maintenant les **slash commandes** (`/`) en plus des commandes texte (`!`). 
+Les slash commandes offrent une meilleure expérience avec :
+- Auto-complétion et aide intégrée
+- Validation des paramètres
+- Interface plus moderne
+
+**Exemples :**
+- `/me Angers` au lieu de `!me Angers`
+- `/goal minute:17 buteur:Mbappé` au lieu de `!g 17 Mbappé`
+- `/champions-league` au lieu de `!ldc`
+
+---
+
 ## Règles de base
 
-- Connecte le bot au vocal avec `!multiplex` (re-tape pour le faire partir).
+- Connecte le bot au vocal avec `/multiplex` (re-tape pour le faire partir).
 - Le jingle + TTS ne jouent que si le bot est connecté au vocal.
 - Ton club est mémorisé par serveur (plus besoin de le retaper à chaque session).
 - L'historique de tes matchs est automatiquement sauvegardé.
@@ -17,39 +32,39 @@
 
 ### Définir / voir ton club
 
-- `!me <club>`  
-  Mémorise ton club (ex. `!me Angers`)
-- `!whoami`  
+- `/me <club>` ou `!me <club>`  
+  Mémorise ton club (ex. `/me Angers`)
+- `/whoami` ou `!whoami`  
   Affiche ton club mémorisé
-- `!forgetme`  
+- `/forgetme` ou `!forgetme`  
   Oublie ton club mémorisé 
 
 ### Profil Coach
 
-- `!coach`  
+- `/coach` ou `!coach`  
   Affiche ton profil coach complet
-- `!coach-set nom <nom>`  
+- `/coach-set` ou `!coach-set nom <nom>`  
   Définit ton nom d'entraîneur
-- `!coach-set nationalité <pays>`  
+- `/coach-set propriete:nationalité valeur:<pays>` ou `!coach-set nationalité <pays>`  
   Définit ta nationalité
-- `!coach-set age <âge>`  
+- `/coach-set propriete:age valeur:<âge>` ou `!coach-set age <âge>`  
   Définit ton âge (16-99)
-- `!coach-set compétition <compétition>`  
+- `/coach-set propriete:compétition valeur:<compétition>` ou `!coach-set compétition <compétition>`  
   Définit la compétition actuelle
-- `!coach-set saison <saison>`  
+- `/coach-set propriete:saison valeur:<saison>` ou `!coach-set saison <saison>`  
   Définit la saison actuelle
-- `!coach-set journée <numéro>`  
+- `/coach-set propriete:journée valeur:<numéro>` ou `!coach-set journée <numéro>`  
   Définit la journée actuelle
 
 ### Gestion Compétition/Saison (raccourcis)
 
-- `!comp [compétition]`  
+- `/competition [nom]` ou `!comp [compétition]`  
   Affiche ou définit la compétition actuelle
-- `!journee [numéro]` ou `!j [numéro]`  
+- `/matchday [journee]` ou `!journee [numéro]` ou `!j [numéro]`  
   Affiche la prochaine journée (auto-calculée en Ligue 1)
 - `!nextj`  
   Passe à la journée suivante manuellement
-- `!season [saison]`  
+- `/season [saison]` ou `!season [saison]`  
   Affiche ou définit la saison actuelle
 - `!setup <compétition> <journée> [saison]`  
   Configuration rapide
@@ -60,11 +75,11 @@
 
 **Exemples :**
 ```
-!coach-set nom "Didier Deschamps"
-!coach-set nationalité France
-!coach-set age 55
-!comp "Ligue 1"
-!season "2024-2025"
+/coach-set propriete:nom valeur:"Didier Deschamps"
+/coach-set propriete:nationalité valeur:France
+/coach-set propriete:age valeur:55
+/competition nom:"Ligue 1"
+/season saison:"2024-2025"
 !setup "Ligue 1" 15 "2024-2025"
 !matchday-reset
 !matchday-set 22
@@ -74,7 +89,7 @@
 
 ## Connexion audio
 
-- `!multiplex`  
+- `/multiplex` ou `!multiplex`  
   Le bot rejoint TON salon vocal et y reste (quitte si salon vide).  
   Re-tape pour le déconnecter.
 
@@ -82,9 +97,9 @@
 
 ## Hymnes UEFA
 
-- `!ldc`  
+- `/champions-league` ou `!ldc`  
   Joue l'hymne de la Ligue des Champions
-- `!eur`  
+- `/europa-league` ou `!eur`  
   Joue l'hymne de l'Europa League
 
 ---
@@ -93,12 +108,12 @@
 
 ### Configuration initiale (une seule fois par serveur)
 
-- `!boardset #multiplex-board`  
+- `/board-setup [salon]` ou `!boardset #multiplex-board`  
   Nettoie le salon, crée et épingle le tableau
 
 ### Actualisation
 
-- `!board`  
+- `/board` ou `!board`  
   Met à jour le tableau épinglé (automatique après chaque action)
 
 ---
@@ -107,41 +122,41 @@
 
 ### Renseigner l'affiche
 
-- `!me <club>`  
+- `/me <club>` ou `!me <club>`  
   Ton club (si pas déjà mémorisé)
-- `!vs <adversaire>`  
-  L'adversaire du jour (ex. `!vs Le Havre`)
-- `!st`  
+- `/vs <adversaire>` ou `!vs <adversaire>`  
+  L'adversaire du jour (ex. `/vs Le Havre`)
+- `/start` ou `!st`  
   Coup d'envoi (Start - statut LIVE, minute 0)
-- `!min <n>`  
-  Fixe la minute de départ si besoin (ex. `!min 5`)
+- `/minute <n>` ou `!min <n>`  
+  Fixe la minute de départ si besoin (ex. `/minute 5`)
 
 ---
 
 ## Pendant le match
 
-### Buts (texte)
+### Buts
 
-- `!g [minute] [buteur…]`  
+- `/goal [minute] [buteur]` ou `!g [minute] [buteur…]`  
   But POUR toi (incrémente ton score, jingle + TTS)
-- `!gc [minute] [buteur…]`  
+- `/goal-against [minute] [buteur]` ou `!gc [minute] [buteur…]`  
   But CONTRE (incrémente l'adversaire)
-- `!min <n>`  
+- `/minute <n>` ou `!min <n>`  
   règle la minute
-- `!mt`  
+- `/halftime` ou `!mt`  
   mi-temps (passe à 45')
-- `!2nd`  
+- `/second-half` ou `!2nd`  
   début de la seconde période (passe à 46')
-- `!fin`  
+- `/end` ou `!fin`  
   fin du match (passe à 90') + sauvegarde automatique
-- `!undo`  
+- `/undo` ou `!undo`  
   Annule ta dernière action (score/minute/statut)
 
 **Exemples :**
 ```
-!g 17 Mbappé
-!g 52
-!gc 89
+/goal minute:17 buteur:Mbappé
+/goal minute:52
+/goal-against minute:89
 ```
 
 ---
@@ -157,14 +172,14 @@
 
 ### Consulter l'historique
 
-- `!history [nombre]`  
+- `/history [nombre]` ou `!history [nombre]`  
   Affiche l'historique des matchs (défaut: 5, max: 20)
 - `!history-ids [nombre]`  
   Affiche l'historique avec les IDs pour édition
 
 ### Statistiques
 
-- `!scorers [nombre]`  
+- `/scorers [nombre]` ou `!scorers [nombre]`  
   Top des buteurs dans l'historique (défaut: 10, max: 20)
 
 ### Gestion manuelle de l'historique
@@ -178,116 +193,29 @@
 
 **Exemples :**
 ```
-!history 10
-!scorers 5
+/history nombre:10
+/scorers nombre:5
 !match-add "Le Havre" 2 1 "Ligue 1" 15
 !match-edit 1755804723993 scoreFor 3
 !match-delete 1755804723993
 ```
 
-**Propriétés éditables :**
-- `opponent` ou `adversaire` : nom de l'adversaire
-- `scoreFor` ou `score_pour` : ton score
-- `scoreAgainst` ou `score_contre` : score adverse
-- `competition` ou `compétition` : nom de la compétition
-- `matchday` ou `journée` : numéro de journée (ou `null` pour supprimer)
-
 ---
 
 ## Conférences de presse
 
-- `!conf [nombre_questions]`  
-  Génère des questions contextuelles basées sur ton dernier match et ton historique (2 par défaut)
+- `/conference [force] [questions]` ou `!conf [nombre_questions]`  
+  Génère des questions contextuelles basées sur ton dernier match et ton historique
 - `!no` 
   Annule le déclenchement de la conférence de presse. 
-- `!conf --force [nombre_questions]`  
+- `/conference force:true [questions]` ou `!conf --force [nombre_questions]`  
   Force une nouvelle conférence de presse même sans session active
 
 **Exemples :**
 ```
-!conf          # 2 questions par défaut en session
-!conf 3        # 3 questions en session
-!conf --force  # Force 2 questions
-!conf --force 5  # Force 5 questions
-```
-
-**Fonctionnement :**
-- **Sessions automatiques** : Se déclenchent après 10 matchs terminés
-- **Questions une par une** : Tapez `!conf` pour chaque question suivante
-- **Mode forcé** : Affiche toutes les questions d'un coup avec `--force`
-
----
-
-## Auto-incrémentation Ligue 1
-
-### Fonctionnement automatique
-
-- En **Ligue 1** : les journées s'incrémentent automatiquement à chaque `!fin`
-- **Autres compétitions** : gestion manuelle avec `!j <numéro>`
-
-### Exemple d'utilisation
-
-```
-!me Angers
-!comp "Ligue 1"      # Active l'auto-incrémentation
-
-# Premier match → sera automatiquement J1
-!vs Marseille
-!st
-!g 17 Guessand
-!fin                 # → Sauvé en J1, prochaine journée = J2
-
-# Deuxième match → sera automatiquement J2
-!vs Toulouse  
-!fin                 # → Sauvé en J2, prochaine journée = J3
-```
-
----
-
-## Après match
-
-- `!fin`  
-  Fin du match (statut 🔴) + sauvegarde automatique
-- `!conf`  
-  Conférence de presse contextuelle
-- `!history`  
-  Vérifier que le match a bien été sauvé
-- `!scorers`  
-  Voir les statistiques de buteurs
-- `!multiplex`  
-  (optionnel) déconnecte le bot du vocal
-
----
-
-## Workflow complet type
-
-```
-# Configuration initiale (une seule fois)
-!me Angers
-!coach-set nom "Mon Nom"
-!coach-set nationalité France
-!comp "Ligue 1"
-!season "2024-2025"
-
-# Avant chaque match
-!vs Marseille
-!st
-
-# Pendant le match
-!g 17 Mbappé
-!gc 52 Payet
-!g 89 Giroud
-!fin
-
-# Après le match
-!conf 3
-!scorers
-!history
-
-# Match suivant (club déjà mémorisé)
-!vs Lyon
-!st
-# etc...
+/conference              # Continue la session en cours
+/conference force:true   # Force 3 questions par défaut
+/conference force:true questions:5  # Force 5 questions
 ```
 
 ---
@@ -296,22 +224,84 @@
 
 ### Style Fabrizio Romano
 
-- `!mercato <montant_millions> <club_origine> <joueur>`  
+- `/mercato <montant> <club_origine> <joueur>` ou `!mercato <montant_millions> <club_origine> <joueur>`  
   Annonce de transfert vers ton club avec style Fabrizio Romano
 
 **Exemples :**
 ```
-!mercato 180 Paris-Saint-Germain Kylian Mbappé
-!mercato 18 Slavia-Prague Jäkel
-!mercato 0 Paris-Saint-Germain Lionel Messi  # Transfert libre
-!mercato 15 Marseille Adrien Rabiot
+/mercato montant:180 club_origine:"Paris Saint-Germain" joueur:"Kylian Mbappé"
+/mercato montant:18 club_origine:"Slavia Prague" joueur:Jäkel
+/mercato montant:0 club_origine:"Paris Saint-Germain" joueur:"Lionel Messi"  # Transfert libre
 ```
 
-**Format de l'annonce :**
-- Voix masculine avec accent italien
-- "BREAKING NEWS"
-- "[Joueur] to [Ton Club] : HERE WE GO"
-- "Deal done and sealed for [X] million euros from [Club origine]"
-- "HERE WE GO" (avec pauses dramatiques)
+**Prérequis :** Avoir défini ton club avec `/me <club>` et être connecté au vocal
 
-**Prérequis :** Avoir défini ton club avec `!me <club>` et être connecté au vocal
+---
+
+## Auto-incrémentation Ligue 1
+
+### Fonctionnement automatique
+
+- En **Ligue 1** : les journées s'incrémentent automatiquement à chaque `/end`
+- **Autres compétitions** : gestion manuelle avec `/matchday <numéro>`
+
+### Exemple d'utilisation
+
+```
+/me Angers
+/competition nom:"Ligue 1"      # Active l'auto-incrémentation
+
+# Premier match → sera automatiquement J1
+/vs Marseille
+/start
+/goal minute:17 buteur:Guessand
+/end                            # → Sauvé en J1, prochaine journée = J2
+
+# Deuxième match → sera automatiquement J2
+/vs Toulouse  
+/end                            # → Sauvé en J2, prochaine journée = J3
+```
+
+---
+
+## Workflow complet type
+
+```
+# Configuration initiale (une seule fois)
+me Angers
+coach-set propriete:nom valeur:"Mon Nom"
+coach-set propriete:nationalité valeur:France
+competition nom:"Ligue 1"
+season saison:"2024-2025"
+
+# Avant chaque match
+vs Marseille
+start
+
+# Pendant le match
+goal minute:17 buteur:Mbappé
+goal-against minute:52 buteur:Payet
+goal minute:89 buteur:Giroud
+end
+
+# Après le match
+conference force:true questions:3
+scorers
+history
+
+# Match suivant (club déjà mémorisé)
+vs Lyon
+start
+# etc...
+```
+
+---
+
+## 💡 Conseils d'utilisation
+
+- **Slash commandes** : Plus rapides et intuitives avec auto-complétion
+- **Commandes texte** : Toujours disponibles pour compatibilité et cas spéciaux
+- **Audio** : Nécessite `/multiplex` actif pour entendre jingles et annonces
+- **Historique** : Sauvegarde automatique à chaque `/end`
+
+---

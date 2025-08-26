@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node tests/slash-commands.test.js",
+    "test:watch": "nodemon tests/slash-commands.test.js",
+    "dev": "nodemon index.js"
   },
   "keywords": [],
   "author": "",
@@ -19,5 +22,8 @@
     "ffmpeg-static": "^5.2.0",
     "microsoft-cognitiveservices-speech-sdk": "^1.45.0",
     "openai": "^5.13.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
   }
 }
