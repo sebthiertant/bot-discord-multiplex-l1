@@ -253,6 +253,14 @@ function clearPressSession(guildId, userId) {
   activePressSessions.delete(key);
 }
 
+function resetGuildData(guildId) {
+  if (profiles.guilds[guildId]) {
+    delete profiles.guilds[guildId];
+    saveProfiles();
+    console.log(`[STORE] Données du serveur ${guildId} supprimées`);
+  }
+}
+
 module.exports = {
   loadProfiles,
   saveProfiles,
@@ -275,5 +283,6 @@ module.exports = {
   startPressSession,
   getPressSession,
   advancePressSession,
-  clearPressSession
+  clearPressSession,
+  resetGuildData
 };

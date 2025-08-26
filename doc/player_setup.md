@@ -1,177 +1,91 @@
-# 🎮 Guide de Configuration Joueur – Bot Multiplex L1
+# 🎮 Guide de configuration rapide (version Slash Commands)
 
-> **Guide obligatoire pour les nouveaux joueurs**
-
----
-
-## 🚨 ÉTAPES OBLIGATOIRES (à faire une seule fois)
-
-### 1. **Définir votre club** ⚽
-```
-!me <nom_de_votre_club>
-```
-**Exemples :**
-```
-!me angers
-!me paris
-!me lehavre
-!me real-madrid
-```
-> ✅ **Obligatoire** - Sans club défini, vous ne pouvez pas jouer de matchs
-
-### 2. **Vérifier votre configuration**
-```
-!whoami
-```
-> Affiche votre club mémorisé
-
-### 3. **Configurer votre profil coach** (recommandé)
-```
-!coach-set nom "<votre_nom>"
-!coach-set nationalité <pays>
-!coach-set age <âge>
-```
-**Exemples :**
-```
-!coach-set nom "Didier Deschamps"
-!coach-set nationalité France
-!coach-set age 55
-```
+jouer avec le bot en utilisant les slash commands (`/`) — interface recommandée.
 
 ---
 
-## 🎯 CONFIGURATION RAPIDE (recommandée)
+## ✅ Étapes rapides (faire une seule fois)
 
-### Option A : Configuration Ligue 1 (auto-gestion des journées)
-```
-!me <votre_club>
-!coach-set nom "<votre_nom>"
-!comp "Ligue 1"
-!season "2024-2025"
-```
+1. Définir ton club
+   - /me club:<nom_du_club>
+   - Exemple : `/me club:Angers`
 
-### Option B : Configuration complète manuelle
-```
-!setup "Ligue 1" 1 "2024-2025"
-!coach-set nom "<votre_nom>"
-!coach-set nationalité <pays>
-!coach-set age <âge>
-```
+2. Vérifier
+   - /whoami — affiche le club mémorisé.
 
----
+3. (Recommandé) Configurer le profil coach
+   - `/coach-set propriete:nom valeur:"Ton Nom"`
+   - `/coach-set propriete:nationalité valeur:France`
+   - `/coach-set propriete:age valeur:35`
 
-## 📋 VALIDATION DE VOTRE SETUP
-
-### Vérifiez votre configuration
-```
-!coach
-!whoami
-!comp
-```
-
-### Résultat attendu :
-```
-👤 Profil Coach — VotreNom
-Nom : Votre Nom
-Nationalité : France
-Âge : XX ans
-Compétition actuelle : Ligue 1
-Saison : 2024-2025
-Journée actuelle : J1
-
-Ton club mémorisé : **Votre Club**
-
-🏆 Compétition actuelle : Ligue 1 (J1 auto-calculée)
-💡 Les journées s'incrémentent automatiquement en Ligue 1
-```
+4. Si tu veux l'auto-incrémentation Ligue 1 :
+   - `/competition nom:"Ligue 1"`
+   - `/season saison:"2024-2025"` (optionnel)
 
 ---
 
-## 🎮 PREMIER MATCH (test de fonctionnement)
+## ▶️ Premier match (flow minimal)
 
-### 1. Connecter le bot au vocal
-```
-!multiplex
-```
-> Rejoignez d'abord un salon vocal, puis tapez cette commande
+1. Connecter le bot au vocal
+   - Rejoins un salon vocal, puis : `/multiplex`
 
-### 2. Lancer un match test
-```
-!vs "Équipe Test"
-!st
-!g 17 Messi
-!fin
-```
+2. Préparer le match
+   - `/vs adversaire:<NomAdversaire>`
+   - `/start` — coup d'envoi (statut LIVE, minute 0)
 
-### 3. Vérifier l'historique
-```
-!history
-```
+3. Pendant le match
+   - But POUR : `/goal minute:<n> buteur:<nom>`  
+     Exemples :
+     - `/goal minute:17 buteur:Mbappé`
+     - `/goal buteur:Giroud`
+     - `/goal minute:52` (sans buteur)
+   - But CONTRE : `/goal-against minute:<n> buteur:<nom>`
+   - Mettre la minute manuellement : `/minute minute:<n>`
+   - Mi-temps : `/halftime` (45')
+   - Début 2ᵉ période : `/second-half` (46')
 
----
-
-## ⚙️ COMMANDES DE MAINTENANCE
-
-### Réinitialiser si nécessaire
-```
-!forgetme                    # Oublie votre club
-!matchday-reset             # Remet le compteur à J1
-```
-
-### Corriger des erreurs
-```
-!coach-set nom "Nouveau Nom"
-!comp "Nouvelle Compétition"
-!matchday-set 10            # Fixer une journée spécifique
-```
+4. Fin de match
+   - `/end` — sauvegarde automatique de l'historique et possibilité de déclencher conférence de presse
 
 ---
 
-## 🆘 DÉPANNAGE RAPIDE
+## 📋 Commandes utiles post-match
 
-### "Je ne peux pas jouer de match"
-1. Vérifiez : `!whoami` → doit afficher votre club
-2. Si vide : `!me <votre_club>`
-
-### "Les journées ne s'incrémentent pas"
-1. Vérifiez : `!comp` → doit afficher "Ligue 1"
-2. Si différent : `!comp "Ligue 1"`
-
-### "Le bot ne parle pas"
-1. `!multiplex` pour connecter le bot au vocal
-2. Rejoignez d'abord un salon vocal
-
-### "Mes stats de buteurs sont vides"
-1. Vérifiez : `!history` → doit contenir des matchs
-2. Utilisez `!g 17 Joueur` avec le nom du buteur
+- `/history [nombre]` — affiche tes derniers matchs (défaut: 5, max: 20)  
+  Exemple : `/history nombre:10`
+- `/scorers [nombre]` — top buteurs (défaut: 10)
+- `/conference [force] [questions]` — conférence de presse (interactive ou forcée)
+- `/mercato montant:<M> club_origine:<Club> joueur:<Nom>` — annonce mercato (style Fabrizio)
+- `/board-setup [salon]` — configurer le tableau épinglé (prépare & épingle)
+- `/board` — mettre à jour le tableau
 
 ---
 
-## 📖 COMMANDES ESSENTIELLES À RETENIR
+## 🧾 Checklist pour un joueur prêt
 
-| Commande | Description | Fréquence |
-|----------|-------------|-----------|
-| `!me <club>` | Définir votre club | **1 fois** |
-| `!multiplex` | Connecter/déconnecter le bot | Début/fin de session |
-| `!vs <adversaire>` | Définir l'adversaire | Chaque match |
-| `!st` | Démarrer le match | Chaque match |
-| `!g [minute] [buteur]` | But pour vous | Pendant le match |
-| `!fin` | Terminer le match | Chaque match |
-| `!history` | Voir vos derniers matchs | Vérification |
+- [ ] /me club:<club>
+- [ ] /coach-set propriete:nom valeur:"Ton Nom"
+- [ ] /competition nom:"Ligue 1" (si souhaité)
+- [ ] Rejoindre un salon vocal + `/multiplex`
+- [ ] Lancer `/start` avant le match
 
 ---
 
-## ✅ CHECKLIST NOUVEAU JOUEUR
+## 🆘 Dépannage rapide
 
-- [ ] Club défini avec `!me`
-- [ ] Profil coach configuré avec `!coach-set nom`
-- [ ] Compétition définie (Ligue 1 recommandée)
-- [ ] Test de connexion vocal avec `!multiplex`
-- [ ] Premier match test réalisé
-- [ ] Historique vérifié avec `!history`
+- Le bot ne rejoint pas le vocal :
+  - Vérifier permissions du bot (Connect / Speak).
+  - Rejoindre un salon vocal avant de lancer `/multiplex`.
+
+- Pas de son / pas de jingle :
+  - S'assurer que le bot est dans le salon vocal.
+  - Vérifier que `assets/but.mp3` existe.
+
+- Les journées ne s'incrémentent pas :
+  - Vérifier `/competition` : l'auto-incrément se déclenche uniquement si la compétition est "Ligue 1".
+  - Utiliser `/matchday` pour régler manuellement.
+
+- Conférence de presse non générée :
+  - Vérifier que la variable d'environnement OPENAI_API_KEY est présente sur l'instance exécutant le bot.
 
 ---
-
-> 🎯 **Une fois cette configuration terminée, vous êtes prêt à jouer !**
-> 
-> Pour les commandes avancées, consultez le [Guide Complet](../README.md)
