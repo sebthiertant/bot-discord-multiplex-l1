@@ -12,10 +12,11 @@ Mémorise le club de chaque joueur + profil coach + historique des matchs (par s
 
 ## **✨ Fonctionnalités**
 
+- **🆕 Slash Commandes** : Interface moderne avec auto-complétion (`/me`, `/goal`, `/multiplex`, etc.)
 - Audio : jingle MP3 + TTS Azure (voix FR, ton "excited", paramètres ajustables).
 - Multiplex : le bot rejoint un salon vocal et y reste tant qu'il y a des humains.
-- Hymnes UEFA : `!ldc` (Ligue des Champions) et `!eur` (Europa League).
-- **🆕 Annonces mercato** : Style Fabrizio Romano avec `!mercato`.
+- Hymnes UEFA : `/champions-league` (Ligue des Champions) et `/europa-league` (Europa League).
+- **🆕 Annonces mercato** : Style Fabrizio Romano avec `/mercato`.
 - Suivi léger (sans intégration FM) :
   - score, minute, buteur, adversaire, statuts (LIVE, MT, 2e MT, FIN).
   - annonces vocales variées (openers, variantes par club, modèles buteur).
@@ -51,6 +52,7 @@ Créez un fichier `.env` à la racine :
 ```
 # Discord
 DISCORD_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+CLIENT_ID=1234567890123456789
 
 # Azure Speech
 AZURE_SPEECH_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -66,7 +68,7 @@ AZURE_VOICE=fr-FR-HenriNeural
 AZURE_STYLE=excited       # excited | cheerful
 AZURE_DEG=1.7             # intensité émotionnelle (0.01–2)
 AZURE_RATE=2              # vitesse parole en %
-AZURE_PITCH=-1.2          # hauteur en demi-tons (négatif = plus grave)
+AZURE_PITCH=-0.3          # hauteur en demi-tons (négatif = plus grave)
 ```
 
 ## **🗂️ Structure (fichiers principaux)**
@@ -92,15 +94,166 @@ AZURE_PITCH=-1.2          # hauteur en demi-tons (négatif = plus grave)
 
 Ce bot utilise clé + région (pas besoin d'Azure AD/OAuth).
 
-## **🤖 Création du bot Discord (token)**
+## **🤖 Création du bot Discord + Slash Commandes**
 
-- Ouvrez le Discord Developer Portal → New Application.
-- Bot → Add Bot → Reset Token → copiez le TOKEN dans `.env` (`DISCORD_TOKEN`).
-- Privileged Gateway Intents : activez Message Content Intent.
-- OAuth2 → URL Generator :
-  - Scopes : bot
-  - Bot Permissions : Send Messages, Read Message History, Manage Messages (épingler/éditer le tableau), Connect, Speak
-- Ouvrez l'URL générée et invitez le bot sur votre serveur.
+### 1. Création de l'application Discord
+
+- Ouvrez le [Discord Developer Portal](https://discord.com/developers/applications) → **New Application**.
+- Donnez un nom à votre application (ex: "Multiplex L1 Bot").
+- Récupérez l'**Application ID** dans l'onglet **General Information** → mettez-le dans `.env` (`CLIENT_ID`).
+
+### 2. Configuration du Bot
+
+- Onglet **Bot** → **Add Bot** (si pas déjà fait).
+- **Reset Token** → copiez le **TOKEN** dans `.env` (`DISCORD_TOKEN`).
+- **Privileged Gateway Intents** : activez **Message Content Intent**.
+
+### 3. Permissions pour les Slash Commandes
+
+- Onglet **OAuth2** → **URL Generator** :
+  - **Scopes** : ✅ `bot` + ✅ `applications.commands`
+  - **Bot Permissions** : 
+    - ✅ Send Messages
+    - ✅ Read Message History
+    - ✅ Manage Messages (épingler/éditer le tableau)
+    - ✅ Connect (rejoindre salons vocaux)
+    - ✅ Speak (jouer audio)
+    - ✅ Use Slash Commands
+
+### 4. Invitation du bot
+
+- Copiez l'URL générée et ouvrez-la dans votre navigateur.
+- Sélectionnez votre serveur et autorisez les permissions.
+- Le bot apparaît maintenant dans votre serveur !
+
+### 5. Déploiement des Slash Commandes
+
+**Important :** Les slash commandes doivent être déployées avant utilisation.
+
+Créez un fichier `deploy-commands.js` à la racine :
+
+```javascript
+// deploy-commands.js
+require('dotenv').config();
+const { REST, Routes } = require('discord.js');
+
+const commands = [
+  // Commandes de base
+  { name: 'me', description: 'Définit ton club', options: [{ name: 'club', description: 'Nom de ton club', type: 3, required: true }] },
+  { name: 'whoami', description: 'Affiche ton club mémorisé' },
+  { name: 'forgetme', description: 'Oublie ton club mémorisé' },
+  { name: 'multiplex', description: 'Active/désactive la connexion vocal' },
+  
+  // Gestion de match
+  { name: 'vs', description: 'Définit l\'adversaire', options: [{ name: 'adversaire', description: 'Nom de l\'adversaire', type: 3, required: true }] },
+  { name: 'start', description: 'Lance le match' },
+  { name: 'goal', description: 'But pour ton équipe', options: [
+    { name: 'minute', description: 'Minute du but', type: 4, required: false },
+    { name: 'buteur', description: 'Nom du buteur', type: 3, required: false }
+  ]},
+  { name: 'goal-against', description: 'But contre ton équipe', options: [
+    { name: 'minute', description: 'Minute du but', type: 4, required: false },
+    { name: 'buteur', description: 'Nom du buteur', type: 3, required: false }
+  ]},
+  { name: 'minute', description: 'Règle la minute actuelle', options: [{ name: 'minute', description: 'Minute', type: 4, required: true }] },
+  { name: 'halftime', description: 'Mi-temps' },
+  { name: 'second-half', description: 'Seconde période' },
+  { name: 'end', description: 'Fin du match' },
+  { name: 'undo', description: 'Annule la dernière action' },
+  
+  // Profil Coach
+  { name: 'coach', description: 'Affiche ton profil coach' },
+  { name: 'coach-set', description: 'Modifie ton profil coach', options: [
+    { name: 'propriete', description: 'Propriété à modifier', type: 3, required: true, choices: [
+      { name: 'nom', value: 'nom' },
+      { name: 'nationalité', value: 'nationalité' },
+      { name: 'age', value: 'age' },
+      { name: 'compétition', value: 'compétition' },
+      { name: 'saison', value: 'saison' },
+      { name: 'journée', value: 'journée' }
+    ]},
+    { name: 'valeur', description: 'Nouvelle valeur', type: 3, required: true }
+  ]},
+  
+  // Compétition
+  { name: 'competition', description: 'Affiche/définit la compétition', options: [{ name: 'nom', description: 'Nom de la compétition', type: 3, required: false }] },
+  { name: 'season', description: 'Affiche/définit la saison', options: [{ name: 'saison', description: 'Nom de la saison', type: 3, required: false }] },
+  { name: 'matchday', description: 'Affiche/définit la journée', options: [{ name: 'journee', description: 'Numéro de journée (1-99)', type: 4, required: false, min_value: 1, max_value: 99 }] },
+  
+  // Audio
+  { name: 'champions-league', description: 'Joue l\'hymne de la Ligue des Champions' },
+  { name: 'europa-league', description: 'Joue l\'hymne de l\'Europa League' },
+  
+  // Historique
+  { name: 'history', description: 'Affiche l\'historique des matchs', options: [{ name: 'nombre', description: 'Nombre de matchs (1-20)', type: 4, required: false, min_value: 1, max_value: 20 }] },
+  { name: 'scorers', description: 'Top des buteurs', options: [{ name: 'nombre', description: 'Nombre de buteurs (1-20)', type: 4, required: false, min_value: 1, max_value: 20 }] },
+  
+  // Tableau
+  { name: 'board', description: 'Met à jour le tableau' },
+  { name: 'board-setup', description: 'Configure le tableau', options: [{ name: 'salon', description: 'Salon pour le tableau', type: 7, required: false }] },
+  
+  // Mercato
+  { name: 'mercato', description: 'Annonce de transfert', options: [
+    { name: 'montant', description: 'Montant en millions d\'euros', type: 4, required: true, min_value: 0 },
+    { name: 'club_origine', description: 'Club vendeur', type: 3, required: true },
+    { name: 'joueur', description: 'Nom du joueur', type: 3, required: true }
+  ]},
+  
+  // Conférence de presse
+  { name: 'conference', description: 'Conférence de presse', options: [
+    { name: 'force', description: 'Force une nouvelle conférence', type: 5, required: false },
+    { name: 'questions', description: 'Nombre de questions (1-5)', type: 4, required: false, min_value: 1, max_value: 5 }
+  ]}
+];
+
+const rest = new REST().setToken(process.env.DISCORD_TOKEN);
+
+(async () => {
+  try {
+    console.log('🚀 Déploiement des slash commandes...');
+    
+    // Déploiement global (visible sur tous les serveurs)
+    await rest.put(
+      Routes.applicationCommands(process.env.CLIENT_ID),
+      { body: commands }
+    );
+    
+    console.log(`✅ ${commands.length} slash commandes déployées avec succès !`);
+  } catch (error) {
+    console.error('❌ Erreur lors du déploiement:', error);
+  }
+})();
+```
+
+Puis lancez le déploiement :
+
+```bash
+node deploy-commands.js
+```
+
+Vous devriez voir :
+```
+🚀 Déploiement des slash commandes...
+✅ 27 slash commandes déployées avec succès !
+```
+
+**Note :** Les slash commandes peuvent prendre jusqu'à 1 heure pour apparaître sur tous les serveurs. Pour un déploiement immédiat en développement, utilisez le déploiement par guilde (serveur spécifique) :
+
+```javascript
+// Pour déploiement immédiat (développement)
+await rest.put(
+  Routes.applicationGuildCommands(process.env.CLIENT_ID, 'VOTRE_GUILD_ID'),
+  { body: commands }
+);
+```
+
+### 6. Vérification
+
+Une fois le bot invité et les commandes déployées :
+
+1. Tapez `/` dans un salon de votre serveur
+2. Vous devriez voir apparaître les commandes du bot avec l'icône de votre application
+3. L'auto-complétion fonctionne pour les paramètres
 
 ## **▶️ Lancer**
 
@@ -113,6 +266,11 @@ Vous devriez voir :
 ```
 [STORE] Profils chargés
 ✅ Connecté en tant que ...
+📋 27 slash commandes chargées:
+  /me
+  /goal
+  /multiplex
+  ...
 ```
 
 ## **🎮 Commandes (texte)**

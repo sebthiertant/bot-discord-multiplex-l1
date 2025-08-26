@@ -577,19 +577,717 @@ const client = new Client({
 
 client.once('ready', () => {
   console.log(`✅ Connecté en tant que ${client.user.tag}`);
+  
+  // Debug: Afficher les commandes déployées
+  client.application.commands.fetch().then(commands => {
+    console.log(`📋 ${commands.size} slash commandes chargées:`);
+    commands.forEach(cmd => console.log(`  /${cmd.name}`));
+  }).catch(console.error);
 });
 
-// auto-leave si salon vide
-client.on('voiceStateUpdate', (oldState, newState) => {
-  const guildId = newState.guild?.id || oldState.guild?.id;
-  const st = stateByGuild.get(guildId);
-  if (!st || !st.stay || !st.voiceChannelId) return;
-  const channel = newState.guild.channels.cache.get(st.voiceChannelId) || oldState.guild.channels.cache.get(st.voiceChannelId);
-  if (!channel || channel.type !== 2) return;
-  const nonBot = channel.members.filter(m => !m.user.bot);
-  if (nonBot.size === 0) {
-    console.log('[AUTO] Salon vide → déconnexion');
-    safeDestroy(guildId);
+// === GESTION DES INTERACTIONS SLASH ===
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  try {
+    const { commandName, options, guildId, user } = interaction;
+    const userId = user.id;
+    const st = getAudioState(guildId);
+
+    // === Commandes de base ===
+    if (commandName === 'me') {
+      const team = options.getString('club');
+      const m = getMatch(guildId, userId);
+      m.team = team;
+      store.setTeam(guildId, userId, team);
+      await interaction.reply(`✅ Club défini : **${team}**`);
+      await updateBoardMsg(client, guildId);
+      return;
+    }
+
+    if (commandName === 'whoami') {
+      const saved = store.getTeam(guildId, userId);
+      await interaction.reply(saved ? `Ton club mémorisé : **${saved}**`
+        : "Aucun club mémorisé. Utilise `/me` pour en définir un.");
+      return;
+    }
+
+    if (commandName === 'forgetme') {
+      store.clearTeam(guildId, userId);
+      const m = getMatch(guildId, userId);
+      m.team = null;
+      await interaction.reply('🗑️ Club oublié.');
+      return;
+    }
+
+    if (commandName === 'multiplex') {
+      const voiceChannel = interaction.member?.voice?.channel;
+      if (st?.connection && st.stay) {
+        await interaction.reply("🔌 Multiplex désactivé. Je me déconnecte.");
+        safeDestroy(guildId);
+        return;
+      }
+      if (!voiceChannel) {
+        await interaction.reply("Rejoins d'abord un salon vocal, puis refais `/multiplex`.");
+        return;
+      }
+      await ensureConnection(voiceChannel, true);
+      await interaction.reply(`🎛️ Multiplex activé dans **${voiceChannel.name}**. J'y reste jusqu'à ce qu'il n'y ait plus personne ou jusqu'à \`/multiplex\`.`);
+      return;
+    }
+
+    // === Gestion de match ===
+    if (commandName === 'vs') {
+      const opp = options.getString('adversaire');
+      const m = getMatch(guildId, userId);
+      
+      const wasFT = m.status === 'FIN';
+      const isNewOpp = !m.opp || m.opp.toLowerCase() !== opp.toLowerCase();
+
+      if (wasFT || isNewOpp) {
+        resetMatch(m, { keepTeam: true, keepOpp: true });
+      }
+
+      m.opp = opp;
+      await interaction.reply(`🤝 Adversaire : **${opp}**${(wasFT || isNewOpp) ? " — score remis à 0." : ""}`);
+      await updateBoardMsg(client, guildId);
+      return;
+    }
+
+    if (commandName === 'start') {
+      const m = getMatch(guildId, userId);
+      if (m.status === 'FT') {
+        resetMatch(m, { keepTeam: true, keepOpp: true });
+      }
+      m.status = 'LIVE';
+      if (m.minute == null) m.minute = 0;
+      await interaction.reply('🟢 Début du match !');
+      await updateBoardMsg(client, guildId);
+      return;
+    }
+
+    if (commandName === 'goal' || commandName === 'goal-against') {
+      if (!st?.connection) {
+        await interaction.reply("Je ne suis pas connecté. Lance d'abord `/multiplex`.");
+        return;
+      }
+
+      const m = getMatch(guildId, userId);
+      const minute = options.getInteger('minute');
+      const scorer = options.getString('buteur');
+      const cmd = commandName === 'goal' ? '!g' : '!gc';
+
+      if (minute != null) m.minute = Math.max(0, minute);
+      m.hist.push({ prev: { ...m } });
+
+      if (commandName === 'goal') {
+        m.for++;
+        if (scorer) m.scorersFor.push(`${scorer}${m.minute ? ` (${m.minute}')` : ''}`);
+      } else {
+        m.against++;
+        if (scorer) m.scorersAgainst.push(`${scorer}${m.minute ? ` (${m.minute}')` : ''}`);
+      }
+
+      const text = buildGoalAnnouncement(m.team, m.opp, m.for, m.against, m.minute, scorer, cmd);
+      await enqueueJingleAndTTS(guildId, text);
+
+      // FIX: Ajouter le buteur dans le message si fourni
+      let replyMessage = `${commandName === 'goal' ? '⚽' : '🥅'} ${m.team || '—'} ${m.for}-${m.against} ${m.opp || '—'}`;
+      
+      if (m.minute) {
+        replyMessage += ` ${m.minute}'`;
+      }
+      
+      if (scorer) {
+        replyMessage += ` — ${scorer}`;
+      }
+
+      await interaction.reply(replyMessage.replace(/\s+/g, ' ').trim());
+      await updateBoardMsg(client, guildId);
+      return;
+    }
+
+    if (commandName === 'minute') {
+      const m = getMatch(guildId, userId);
+      const minute = options.getInteger('minute');
+      m.minute = Math.max(0, minute);
+      await interaction.reply(`⏱️ Minute réglée sur **${minute}'**`);
+      await updateBoardMsg(client, guildId);
+      return;
+    }
+
+    if (commandName === 'halftime') {
+      const m = getMatch(guildId, userId);
+      m.status = 'MT';
+      m.minute = 45;
+      m.minuteLabel = '45';
+      await interaction.reply('🟡 Mi-temps.');
+      await updateBoardMsg(client, guildId);
+      return;
+    }
+
+    if (commandName === 'second-half') {
+      const m = getMatch(guildId, userId);
+      m.status = 'H2';
+      if ((m.minute ?? 0) < 46) {
+        m.minute = 46;
+        m.minuteLabel = '46';
+      }
+      await interaction.reply('🟢 Début de la seconde période (46\').');
+      await updateBoardMsg(client, guildId);
+      return;
+    }
+
+    if (commandName === 'end') {
+      const m = getMatch(guildId, userId);
+      const st = getAudioState(guildId);
+
+      m.status = 'FIN';
+      m.minute = 90;
+      m.minuteLabel = '90';
+
+      // Générer et jouer l'annonce de fin de match (SANS jingle)
+      if (st?.connection && m.team && m.opp) {
+        // 1. Jouer le coup de sifflet final
+        const whistleRes = createAudioResource(FINAL_WHISTLE_PATH);
+        // 2. Générer le TTS de l'annonce de fin
+        const endingText = buildEndingAnnouncement(m.team, m.opp, m.for, m.against);
+        const ttsPath = path.join(ASSETS_DIR, `tts_${Date.now()}.mp3`);
+        await synthToFile(endingText, ttsPath, "fr-FR-HenriNeural");
+        const ttsRes = createAudioResource(ttsPath); ttsRes.metadata = { tempPath: ttsPath };
+        // 3. Enqueue whistle then TTS
+        enqueue(guildId, [whistleRes, ttsRes]);
+      }
+
+      // Sauvegarde automatique IDENTIQUE à !fin
+      if (m.team && m.opp) {
+        const coach = store.getCoachProfile(guildId, userId);
+        const competition = coach?.currentCompetition || 'Ligue 1';
+        
+        let matchday = null;
+        if (competition === 'Ligue 1') {
+          const currentMatchday = coach?.currentMatchday || 1;
+          matchday = currentMatchday;
+          store.updateCoachProfile(guildId, userId, { currentMatchday: currentMatchday + 1 });
+        } else {
+          matchday = coach?.currentMatchday || null;
+        }
+
+        const matchData = {
+          team: m.team,
+          opponent: m.opp,
+          scoreFor: m.for,
+          scoreAgainst: m.against,
+          competition: competition,
+          matchday: matchday,
+          scorersFor: m.scorersFor || [],
+          scorersAgainst: m.scorersAgainst || []
+        };
+
+        store.addMatchToHistory(guildId, userId, matchData);
+
+        // FIX: Ajouter la logique de conférence de presse automatique IDENTIQUE à !fin
+        const pressCounter = store.incrementPressCounter(guildId, userId);
+        const autoInfo = competition === 'Ligue 1' && matchday ? ` (J${matchday} auto-assignée)` : '';
+
+        let replyMessage = `🔴 Fin du match. (Ajouté automatiquement à l'historique${autoInfo})`;
+
+        // FIX: DEFER LA RÉPONSE AVANT LE DÉCLENCHEMENT DE LA CONFÉRENCE
+        if (pressCounter >= 10) {
+          // Répondre IMMÉDIATEMENT avant la génération longue
+          await interaction.reply(replyMessage + `\n\n🎙️ **Génération de la conférence de presse en cours...**`);
+
+          try {
+            // Générer la conférence de presse
+            const recentMatches = store.getMatchHistory(guildId, userId, 5);
+            const lastMatch = recentMatches[0];
+
+            const ctx = {
+              coach: coach?.name || interaction.member?.displayName || user.username,
+              team: lastMatch.team || 'votre équipe',
+              opp: lastMatch.opponent || 'l\'adversaire',
+              for: lastMatch.scoreFor || 0,
+              against: lastMatch.scoreAgainst || 0,
+              scorersFor: lastMatch.scorersFor || [],
+              scorersAgainst: lastMatch.scorersAgainst || [],
+              phase: lastMatch.competition || 'Ligue 1',
+              matchday: lastMatch.matchday,
+              nationality: coach?.nationality,
+              age: coach?.age,
+              currentSeason: coach?.currentSeason,
+              recentMatches: recentMatches.slice(1).map(match => ({
+                opponent: match.opponent,
+                result: `${match.scoreFor}-${match.scoreAgainst}`,
+                competition: match.competition,
+                matchday: match.matchday,
+                scorersFor: match.scorersFor || [],
+                scorersAgainst: match.scorersAgainst || [],
+                date: match.date
+              }))
+            };
+
+            const pressResult = await generateQuestions(ctx, 3);
+            const journalist = pressResult.journalist || { name: "Journaliste", media: "Média Sport" };
+            const questions = pressResult.questions || [];
+
+            // Démarrer la session de conférence de presse
+            store.startPressSession(guildId, userId, questions, journalist);
+            store.resetPressCounter(guildId, userId);
+
+            const finalMessage = `🎙️ **CONFÉRENCE DE PRESSE DÉCLENCHÉE !**\n${pressResult.presentation}\n\n💡 Tapez \`/conference\` pour commencer la conférence de presse.\n\n❌ Tapez \`!no\` pour annuler la conférence de presse.`;
+
+            // Envoyer le message final avec followUp
+            await interaction.followUp(finalMessage);
+
+            // NOUVEAU : Lire la présentation en audio si connecté
+            const st = getAudioState(guildId);
+            if (st?.connection) {
+              await playPressAudio(guildId, pressResult.presentation, journalist, 'presentation');
+            }
+
+          } catch (error) {
+            console.error('[PRESS AUTO] Erreur génération:', error);
+            await interaction.followUp(`🎙️ Conférence de presse déclenchée mais erreur de génération. Utilisez \`/conference force:true\`.`);
+          }
+        } else {
+          // Pas de conférence → réponse normale
+          await interaction.reply(replyMessage);
+        }
+      } else {
+        const audioInfo = st?.connection ? ' + annonce vocale' : '';
+        await interaction.reply(`🔴 Fin du match.${audioInfo}`);
+      }
+
+      await updateBoardMsg(client, guildId);
+      return;
+    }
+
+    if (commandName === 'undo') {
+      const m = getMatch(guildId, userId);
+      const last = m.hist.pop();
+      if (!last) {
+        await interaction.reply("Rien à annuler.");
+        return;
+      }
+      Object.assign(m, last.prev);
+      await interaction.reply('↩️ Dernière action annulée.');
+      await updateBoardMsg(client, guildId);
+      return;
+    }
+
+    // === Profil Coach ===
+    if (commandName === 'coach') {
+      const profile = store.getCoachProfile(guildId, userId);
+      if (!profile || Object.keys(profile).length === 0) {
+        await interaction.reply("Aucun profil coach configuré. Utilise `/coach-set` pour commencer.");
+        return;
+      }
+
+      const lines = [`👤 **Profil Coach** — ${user.username}`];
+      if (profile.name) lines.push(`Nom : ${profile.name}`);
+      if (profile.nationality) lines.push(`Nationalité : ${profile.nationality}`);
+      if (profile.age) lines.push(`Âge : ${profile.age} ans`);
+      if (profile.currentCompetition) lines.push(`Compétition : ${profile.currentCompetition}`);
+      if (profile.currentSeason) lines.push(`Saison : ${profile.currentSeason}`);
+      if (profile.currentMatchday) lines.push(`Journée : J${profile.currentMatchday}`);
+
+      await interaction.reply(lines.join('\n'));
+      return;
+    }
+
+    if (commandName === 'coach-set') {
+      const prop = options.getString('propriete');
+      const value = options.getString('valeur');
+
+      const validProps = {
+        'nom': 'name',
+        'nationalité': 'nationality',
+        'age': 'age',
+        'compétition': 'currentCompetition',
+        'saison': 'currentSeason',
+        'journée': 'currentMatchday'
+      };
+
+      const mappedProp = validProps[prop];
+      const updates = {};
+
+      if (mappedProp === 'age') {
+        const age = parseInt(value, 10);
+        if (isNaN(age) || age < 16 || age > 99) {
+          await interaction.reply("L'âge doit être un nombre entre 16 et 99.");
+          return;
+        }
+        updates[mappedProp] = age;
+      } else if (mappedProp === 'currentMatchday') {
+        const matchday = parseInt(value, 10);
+        if (isNaN(matchday) || matchday < 1 || matchday > 99) {
+          await interaction.reply("La journée doit être un nombre entre 1 et 99.");
+          return;
+        }
+        updates[mappedProp] = matchday;
+      } else {
+        updates[mappedProp] = value;
+      }
+
+      store.updateCoachProfile(guildId, userId, updates);
+      await interaction.reply(`✅ ${prop} mis à jour : **${value}**`);
+      return;
+    }
+
+    // === Gestion Compétition ===
+    if (commandName === 'competition') {
+      const competition = options.getString('nom');
+      
+      if (!competition) {
+        const coach = store.getCoachProfile(guildId, userId);
+        const current = coach?.currentCompetition || 'Ligue 1';
+        
+        if (current === 'Ligue 1') {
+          const nextMatchday = coach?.currentMatchday || 1;
+          await interaction.reply(`🏆 Compétition actuelle : **${current}** (J${nextMatchday} auto-calculée)\n💡 Les journées s'incrémentent automatiquement en Ligue 1`);
+        } else {
+          const matchday = coach?.currentMatchday ? ` (J${coach.currentMatchday})` : '';
+          await interaction.reply(`🏆 Compétition actuelle : **${current}**${matchday}`);
+        }
+        return;
+      }
+
+      store.updateCoachProfile(guildId, userId, { currentCompetition: competition });
+      const autoInfo = competition === 'Ligue 1' ? '\n💡 Les journées s\'incrémentent automatiquement en Ligue 1' : '';
+      await interaction.reply(`🏆 Compétition définie : **${competition}**${autoInfo}`);
+      return;
+    }
+
+    if (commandName === 'season') {
+      const season = options.getString('saison');
+      
+      if (!season) {
+        const coach = store.getCoachProfile(guildId, userId);
+        const current = coach?.currentSeason || 'Non définie';
+        await interaction.reply(`📆 Saison actuelle : **${current}**`);
+        return;
+      }
+
+      store.updateCoachProfile(guildId, userId, { currentSeason: season });
+      await interaction.reply(`📆 Saison définie : **${season}**`);
+      return;
+    }
+
+    if (commandName === 'matchday') {
+      const matchday = options.getInteger('journee');
+      
+      if (!matchday) {
+        const coach = store.getCoachProfile(guildId, userId);
+        const competition = coach?.currentCompetition || 'Ligue 1';
+        
+        if (competition === 'Ligue 1') {
+          const nextMatchday = coach?.currentMatchday || 1;
+          await interaction.reply(`📅 Prochaine journée Ligue 1 : **J${nextMatchday}** (auto-calculée)`);
+        } else {
+          const current = coach?.currentMatchday || 'Non définie';
+          await interaction.reply(`📅 Journée actuelle : **J${current}**`);
+        }
+        return;
+      }
+
+      store.updateCoachProfile(guildId, userId, { currentMatchday: matchday });
+      await interaction.reply(`📅 Journée définie : **J${matchday}**`);
+      return;
+    }
+
+    // === Audio ===
+    if (commandName === 'champions-league') {
+      if (!st?.connection) {
+        await interaction.reply("Je ne suis pas connecté. Lance d'abord `/multiplex`.");
+        return;
+      }
+
+      const success = await playAudioFile(guildId, UCL_ANTHEM_PATH);
+      if (success) {
+        await interaction.reply('🎵 Hymne de la Ligue des Champions en cours...');
+      } else {
+        await interaction.reply("❌ Fichier `ucl_anthem.mp3` introuvable dans le dossier assets.");
+      }
+      return;
+    }
+
+    if (commandName === 'europa-league') {
+      if (!st?.connection) {
+        await interaction.reply("Je ne suis pas connecté. Lance d'abord `/multiplex`.");
+        return;
+      }
+
+      const success = await playAudioFile(guildId, EUROPA_ANTHEM_PATH);
+      if (success) {
+        await interaction.reply('🎵 Hymne de l\'Europa League en cours...');
+      } else {
+        await interaction.reply("❌ Fichier `europa_anthem.mp3` introuvable dans le dossier assets.");
+      }
+      return;
+    }
+
+    // === Historique ===
+    if (commandName === 'history') {
+      const limit = options.getInteger('nombre') || 5;
+      const matches = store.getMatchHistory(guildId, userId, limit);
+
+      if (matches.length === 0) {
+        await interaction.reply("Aucun match dans l'historique. Les matchs terminés avec `/end` y sont automatiquement ajoutés.");
+        return;
+      }
+
+      const lines = [`📋 **Historique** — ${matches.length} dernier(s) match(s)`];
+      matches.forEach((match, i) => {
+        const result = `${match.scoreFor || 0}-${match.scoreAgainst || 0}`;
+        const vs = match.opponent || '?';
+        const comp = match.competition ? ` (${match.competition})` : '';
+        const day = match.matchday ? ` J${match.matchday}` : '';
+        lines.push(`${i + 1}. ${match.team || '?'} ${result} ${vs}${comp}${day}`);
+      });
+
+      await interaction.reply(lines.join('\n'));
+      return;
+    }
+
+    if (commandName === 'scorers') {
+      const limit = options.getInteger('nombre') || 10;
+      const matches = store.getMatchHistory(guildId, userId, 100);
+
+      if (matches.length === 0) {
+        await interaction.reply("Aucun match dans l'historique pour calculer les statistiques.");
+        return;
+      }
+
+      const scorerStats = {};
+      matches.forEach(match => {
+        if (Array.isArray(match.scorersFor)) {
+          match.scorersFor.forEach(scorer => {
+            const scorerName = String(scorer).split(' (')[0].trim();
+            if (scorerName) {
+              if (!scorerStats[scorerName]) {
+                scorerStats[scorerName] = { goals: 0, matches: new Set() };
+              }
+              scorerStats[scorerName].goals++;
+              scorerStats[scorerName].matches.add(match.id);
+            }
+          });
+        }
+      });
+
+      if (Object.keys(scorerStats).length === 0) {
+        await interaction.reply("Aucun buteur trouvé dans l'historique.");
+        return;
+      }
+
+      const sortedScorers = Object.entries(scorerStats)
+        .map(([name, stats]) => ({ name, goals: stats.goals, matches: stats.matches.size }))
+        .sort((a, b) => b.goals - a.goals)
+        .slice(0, limit);
+
+      const lines = [`⚽ **Top ${Math.min(limit, sortedScorers.length)} des buteurs** — ${matches.length} match(s) analysés`];
+      sortedScorers.forEach((scorer, i) => {
+        const rank = i + 1;
+        const emoji = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
+        const goalText = scorer.goals > 1 ? 'buts' : 'but';
+        const matchText = scorer.matches > 1 ? 'matchs' : 'match';
+        lines.push(`${emoji} **${scorer.name}** — ${scorer.goals} ${goalText} (${scorer.matches} ${matchText})`);
+      });
+
+      await interaction.reply(lines.join('\n'));
+      return;
+    }
+
+    // === Tableau ===
+    if (commandName === 'board') {
+      await updateBoardMsg(client, guildId);
+      await interaction.reply('📊 Tableau mis à jour.');
+      return;
+    }
+
+    if (commandName === 'board-setup') {
+      const target = options.getChannel('salon') || interaction.channel;
+
+      if (!target || target.type !== ChannelType.GuildText) {
+        await interaction.reply("Indique un salon texte valide.");
+        return;
+      }
+
+      try {
+        await purgeChannel(target);
+        const { sent, pinned, pinError } = await ensureBoardMessage(client, guildId, target);
+        
+        await interaction.reply(
+          pinned
+            ? `📌 Tableau initialisé dans ${target} et **épinglé** (canal nettoyé).`
+            : `📌 Tableau initialisé dans ${target}, **non épinglé**. Détail: ${pinError || 'inconnu'}`
+        );
+      } catch (e) {
+        await interaction.reply(`Impossible de configurer le tableau : ${e?.message || e}`);
+      }
+      return;
+    }
+
+    // === Mercato ===
+    if (commandName === 'mercato') {
+      if (!st?.connection) {
+        await interaction.reply("Je ne suis pas connecté. Lance d'abord `/multiplex`.");
+        return;
+      }
+
+      const amount = options.getInteger('montant');
+      const fromClub = options.getString('club_origine');
+      const playerName = options.getString('joueur');
+
+      const m = getMatch(guildId, userId);
+      const userClub = m.team || store.getTeam(guildId, userId);
+
+      if (!userClub) {
+        await interaction.reply("Définis d'abord ton club avec `/me` avant d'annoncer un transfert !");
+        return;
+      }
+
+      try {
+        const coach = store.getCoachProfile(guildId, userId);
+        const coachName = coach?.name || interaction.member?.displayName || user.username;
+
+        const audioPath = await generateMercatoAnnouncement(playerName, amount, fromClub, userClub, coachName);
+        const resource = createAudioResource(audioPath);
+        resource.metadata = { tempPath: audioPath };
+        enqueue(guildId, [resource]);
+
+        const displayText = buildMercatoDisplayText(playerName, amount, fromClub, userClub, coachName);
+        await interaction.reply(displayText);
+
+      } catch (error) {
+        console.error('[MERCATO] Erreur:', error);
+        await interaction.reply("❌ Erreur lors de la génération de l'annonce mercato.");
+      }
+      return;
+    }
+
+    // === Conférence de presse ===
+    if (commandName === 'conference') {
+      const isForced = options.getBoolean('force') || false;
+      const n = options.getInteger('questions');
+
+      const activeSession = store.getPressSession(guildId, userId);
+
+      if (activeSession && !isForced) {
+        const currentQ = activeSession.questions[activeSession.currentIndex];
+        const isLastQuestion = activeSession.currentIndex === activeSession.questions.length - 1;
+        
+        let questionText = currentQ;
+        if (isLastQuestion) {
+          questionText += questionText.endsWith('.') ? ' Merci.' : '. Merci.';
+        }
+
+        const matchInfo = `Q${activeSession.currentIndex + 1}/${activeSession.questions.length}`;
+        await interaction.reply(`🎙️ **${matchInfo}** — ${questionText}`);
+
+        if (st?.connection) {
+          await playPressAudio(guildId, questionText, activeSession.journalist, 'question');
+        }
+
+        const nextSession = store.advancePressSession(guildId, userId);
+        if (!nextSession) {
+          await interaction.followUp("📝 **Fin de la conférence de presse.** Merci !");
+        } else {
+          await interaction.followUp(`💡 Tapez \`/conference\` pour la question suivante (${nextSession.currentIndex + 1}/${nextSession.questions.length}).`);
+        }
+        return;
+      }
+
+      if (!isForced) {
+        await interaction.reply("❌ Aucune conférence de presse en cours. Utilisez l'option `force` pour en démarrer une.");
+        return;
+      }
+
+      // FIX: Répondre immédiatement pour éviter le timeout
+      await interaction.deferReply();
+
+      try {
+        // Mode forcé - logique identique à !conf --force
+        const coach = store.getCoachProfile(guildId, userId);
+        const recentMatches = store.getMatchHistory(guildId, userId, 5);
+
+        if (recentMatches.length === 0) {
+          await interaction.editReply("Aucun match dans l'historique. Termine un match pour générer une conférence.");
+          return;
+        }
+
+        const lastMatch = recentMatches[0];
+        const ctx = {
+          coach: coach?.name || interaction.member?.displayName || user.username,
+          team: lastMatch.team || 'votre équipe',
+          opp: lastMatch.opponent || 'l\'adversaire',
+          for: lastMatch.scoreFor || 0,
+          against: lastMatch.scoreAgainst || 0,
+          scorersFor: lastMatch.scorersFor || [],
+          scorersAgainst: lastMatch.scorersAgainst || [],
+          phase: lastMatch.competition || 'Ligue 1',
+          matchday: lastMatch.matchday,
+          nationality: coach?.nationality,
+          age: coach?.age,
+          currentSeason: coach?.currentSeason,
+          recentMatches: recentMatches.slice(1).map(match => ({
+            opponent: match.opponent,
+            result: `${match.scoreFor}-${match.scoreAgainst}`,
+            competition: match.competition,
+            matchday: match.matchday,
+            scorersFor: match.scorersFor || [],
+            scorersAgainst: match.scorersAgainst || [],
+            date: match.date
+          }))
+        };
+
+        const pressResult = await generateQuestions(ctx, n || 3);
+        const qs = pressResult.questions || [];
+        const journalist = pressResult.journalist || { name: "Journaliste", media: "Média Sport" };
+
+        const lines = qs.map((q, i) => `**Q${i + 1}.** ${q}`).join('\n');
+        const matchInfo = `${ctx.team} ${ctx.for}-${ctx.against} ${ctx.opp}${ctx.matchday ? ` (J${ctx.matchday})` : ''}`;
+        const fullMessage = `🎙️ **Conférence de presse (forcée)** — ${matchInfo}\n\n${pressResult.presentation}\n\n${lines}`;
+        
+        await interaction.editReply({ content: fullMessage });
+
+        // Audio en arrière-plan (pas d'attente)
+        if (st?.connection) {
+          // Lancer l'audio sans attendre pour éviter de bloquer la réponse
+          setImmediate(async () => {
+            try {
+              await playPressAudio(guildId, pressResult.presentation, journalist, 'presentation');
+              for (const q of qs) {
+                await playPressAudio(guildId, q, journalist, 'question');
+              }
+            } catch (audioError) {
+              console.error('[PRESS AUDIO] Erreur lors de la lecture audio:', audioError);
+            }
+          });
+        }
+
+      } catch (error) {
+        console.error('[CONFERENCE] Erreur génération:', error);
+        await interaction.editReply("❌ Erreur lors de la génération de la conférence de presse.");
+      }
+      return;
+    }
+
+  } catch (error) {
+    console.error('Erreur slash commande:', error);
+    
+    // FIX: Vérifier si l'interaction a déjà été répondue avant d'essayer de répondre
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: 'Une erreur est survenue.', ephemeral: true });
+      } else if (interaction.deferred) {
+        await interaction.editReply({ content: 'Une erreur est survenue.' });
+      } else {
+        // L'interaction a déjà été répondue, utiliser followUp
+        await interaction.followUp({ content: 'Une erreur est survenue.', ephemeral: true });
+      }
+    } catch (replyError) {
+      console.error('Erreur lors de la réponse d\'erreur:', replyError);
+    }
   }
 });
 
@@ -756,21 +1454,17 @@ client.on('messageCreate', async (msg) => {
         enqueue(guildId, [whistleRes, ttsRes]);
       }
 
-      // Sauvegarder automatiquement le match dans l'historique
+      // Sauvegarde automatique IDENTIQUE à !fin
       if (m.team && m.opp) {
         const coach = store.getCoachProfile(guildId, userId);
         const competition = coach?.currentCompetition || 'Ligue 1';
-
-        // Auto-incrémentation pour la journée de Ligue 1
+        
         let matchday = null;
         if (competition === 'Ligue 1') {
-          // FIX: Utiliser le compteur du profil coach au lieu de calculer depuis l'historique
           const currentMatchday = coach?.currentMatchday || 1;
           matchday = currentMatchday;
-          // Mettre à jour le profil coach avec la nouvelle journée (incrémentation pour le prochain match)
           store.updateCoachProfile(guildId, userId, { currentMatchday: currentMatchday + 1 });
         } else {
-          // Pour les autres compétitions, utiliser la journée définie manuellement
           matchday = coach?.currentMatchday || null;
         }
 
@@ -787,20 +1481,24 @@ client.on('messageCreate', async (msg) => {
 
         store.addMatchToHistory(guildId, userId, matchData);
 
+        // FIX: Ajouter la logique de conférence de presse automatique IDENTIQUE à !fin
         const pressCounter = store.incrementPressCounter(guildId, userId);
         const autoInfo = competition === 'Ligue 1' && matchday ? ` (J${matchday} auto-assignée)` : '';
 
         let replyMessage = `🔴 Fin du match. (Ajouté automatiquement à l'historique${autoInfo})`;
 
-        // Déclenchement automatique de la conférence de presse
+        // FIX: DEFER LA RÉPONSE AVANT LE DÉCLENCHEMENT DE LA CONFÉRENCE
         if (pressCounter >= 10) {
+          // Répondre IMMÉDIATEMENT avant la génération longue
+          await interaction.reply(replyMessage + `\n\n🎙️ **Génération de la conférence de presse en cours...**`);
+
           try {
             // Générer la conférence de presse
             const recentMatches = store.getMatchHistory(guildId, userId, 5);
             const lastMatch = recentMatches[0];
 
             const ctx = {
-              coach: coach?.name || msg.member?.displayName || msg.author.username,
+              coach: coach?.name || interaction.member?.displayName || user.username,
               team: lastMatch.team || 'votre équipe',
               opp: lastMatch.opponent || 'l\'adversaire',
               for: lastMatch.scoreFor || 0,
@@ -831,8 +1529,10 @@ client.on('messageCreate', async (msg) => {
             store.startPressSession(guildId, userId, questions, journalist);
             store.resetPressCounter(guildId, userId);
 
-            replyMessage += `\n\n🎙️ **CONFÉRENCE DE PRESSE DÉCLENCHÉE !**\n${pressResult.presentation}\n\n💡 Tapez \`!conf\` pour commencer la conférence de presse.`;
-            replyMessage += `\n\n❌ Tapez \`!no\` pour annuler la conférence de presse.`;
+            const finalMessage = `🎙️ **CONFÉRENCE DE PRESSE DÉCLENCHÉE !**\n${pressResult.presentation}\n\n💡 Tapez \`/conference\` pour commencer la conférence de presse.\n\n❌ Tapez \`!no\` pour annuler la conférence de presse.`;
+
+            // Envoyer le message final avec followUp
+            await interaction.followUp(finalMessage);
 
             // NOUVEAU : Lire la présentation en audio si connecté
             const st = getAudioState(guildId);
@@ -842,455 +1542,82 @@ client.on('messageCreate', async (msg) => {
 
           } catch (error) {
             console.error('[PRESS AUTO] Erreur génération:', error);
-            replyMessage += `\n\n🎙️ Conférence de presse déclenchée mais erreur de génération. Utilisez \`!conf --force\`.`;
+            await interaction.followUp(`🎙️ Conférence de presse déclenchée mais erreur de génération. Utilisez \`/conference force:true\`.`);
           }
+        } else {
+          // Pas de conférence → réponse normale
+          await interaction.reply(replyMessage);
         }
-
-        await msg.reply(replyMessage);
       } else {
         const audioInfo = st?.connection ? ' + annonce vocale' : '';
-        await msg.reply(`🔴 Fin du match.${audioInfo}`);
+        await interaction.reply(`🔴 Fin du match.${audioInfo}`);
       }
 
       await updateBoardMsg(client, guildId);
       return;
     }
 
-    if (cmd === '!min') {
-      const n = parseInt(rest[0], 10);
-      if (Number.isNaN(n)) return void msg.reply("Utilise : `!min <minute>`");
-      m.minute = Math.max(0, n);
-      await msg.reply(`⏱️ Minute réglée sur **${m.minute}’**`);
-      await updateBoardMsg(client, guildId);
-      return;
-    }
-
-    if (cmd === '!undo') {
-      const last = m.hist.pop();
-      if (!last) return void msg.reply("Rien à annuler.");
-      Object.assign(m, last.prev);
-      await msg.reply('↩️ Dernière action annulée.');
-      await updateBoardMsg(client, guildId);
-      return;
-    }
-
-    if (cmd === '!g' || cmd === '!gc') {
-      const st = getAudioState(guildId);
-      if (!st?.connection) {
-        await msg.reply("Je ne suis pas connecté. Lance d'abord `!multiplex`.");
-        return;
-      }
-      // !g [minute] [buteur…]
-      let minute = null, scorer = null;
-      if (rest.length && /^\d+$/.test(rest[0])) minute = parseInt(rest.shift(), 10);
-      if (minute != null) m.minute = Math.max(0, minute);
-      if (rest.length) scorer = rest.join(' ');
-
-      m.hist.push({ prev: { ...m } });
-
-      // Mise à jour score et tracking des buteurs pour conférence de presse
-      if (cmd === '!g') {
-        m.for++;
-        if (scorer) m.scorersFor.push(`${scorer}${m.minute ? ` (${m.minute}')` : ''}`);
-      } else {
-        m.against++;
-        if (scorer) m.scorersAgainst.push(`${scorer}${m.minute ? ` (${m.minute}')` : ''}`);
-      }
-
-      const text = buildGoalAnnouncement(m.team, m.opp, m.for, m.against, m.minute, scorer, cmd);
-      await enqueueJingleAndTTS(guildId, text);
-
-      await msg.reply(
-        `${cmd === '!g' ? '⚽' : '🥅'} ${m.team || '—'} ${m.for}-${m.against} ${m.opp || '—'} ${m.minute ? `${m.minute}'` : ''}`
-          .replace(/\s+/g, ' ').trim()
-      );
-      await updateBoardMsg(client, guildId);
-      return;
-    }
-
-    if (cmd === '!boardset') {
-      const target =
-        msg.mentions.channels.first() ||
-        msg.guild.channels.cache.get(rest[0]) ||
-        msg.channel;
-
-      if (!target || target.type !== ChannelType.GuildText) {
-        return void msg.channel.send("Indique un salon texte valide : `!boardset #multiplex-board`");
-      }
-
-      // 🔥 Purge AVANT toute réponse
-      try {
-        await purgeChannel(target);
-      } catch (e) {
-        return void msg.channel.send(`Impossible de nettoyer ${target}: ${e?.message || e}`);
-      }
-
-      const existing = store.getBoard(guildId);
-      const { sent, pinned, pinError } = await ensureBoardMessage(client, guildId, target);
-
-      if (existing && (existing.channelId !== target.id || existing.msgId !== sent.id)) {
-        try {
-          const oldCh = await client.channels.fetch(existing.channelId);
-          const oldMsg = await oldCh.messages.fetch(existing.msgId);
-          await oldMsg.delete();
-        } catch { }
-      }
-
-      await msg.channel.send(
-        pinned
-          ? `📌 Tableau initialisé dans ${target} et **épinglé** (canal nettoyé).`
-          : `📌 Tableau initialisé dans ${target}, **non épinglé**. Détail: ${pinError || 'inconnu'}`
-      );
-      return;
-    }
-
-     // ===== NOUVELLE COMMANDE MERCATO =====
-    if (cmd === '!mercato') {
-      if (!st?.connection) {
-        await msg.reply("Je ne suis pas connecté. Lance d'abord `!multiplex`.");
-        return;
-      }
-
-      if (rest.length < 3) {
-        await msg.reply("Utilise : `!mercato <montant_millions> <club_origine> <joueur>`\nExemple : `!mercato 180 \"Paris Saint-Germain\" \"Kylian Mbappé\"`");
-        return;
-      }
-
-      // Récupérer le club de l'utilisateur
+    if (commandName === 'undo') {
       const m = getMatch(guildId, userId);
-      const userClub = m.team || store.getTeam(guildId, userId);
-
-      if (!userClub) {
-        await msg.reply("Définis d'abord ton club avec `!me <club>` avant d'annoncer un transfert !");
+      const last = m.hist.pop();
+      if (!last) {
+        await interaction.reply("Rien à annuler.");
         return;
       }
-
-      // NOUVEAU ORDRE : montant, club origine, puis joueur
-      const [amountStr, fromClub, ...playerNameParts] = rest;
-      const amount = parseInt(amountStr, 10);
-      const playerName = playerNameParts.join(' ');
-
-      if (isNaN(amount) || amount < 0) {
-        await msg.reply("Le montant doit être un nombre en millions d'euros (ex: 50 pour 50M€).");
-        return;
-      }
-
-      if (!fromClub.trim()) {
-        await msg.reply("Précise le club d'origine du joueur.");
-        return;
-      }
-
-      if (!playerName.trim()) {
-        await msg.reply("Précise le nom du joueur.");
-        return;
-      }
-
-      try {
-        // Récupérer le nom du coach depuis le store
-        const coach = store.getCoachProfile(guildId, userId);
-        const coachName = coach?.name || msg.member?.displayName || msg.author.username;
-
-        // Générer l'annonce audio avec le nom du coach
-        const audioPath = await generateMercatoAnnouncement(
-          playerName.replace(/['"]/g, ''), // Enlever les guillemets
-          amount,
-          fromClub.replace(/['"]/g, ''), // Enlever les guillemets du club aussi
-          userClub,
-          coachName // Passer le nom du coach pour l'audio aussi
-        );
-
-        // Jouer l'audio
-        const resource = createAudioResource(audioPath);
-        resource.metadata = { tempPath: audioPath };
-        enqueue(guildId, [resource]);
-
-        // Afficher le texte stylisé une fois tout prêt
-        const displayText = buildMercatoDisplayText(
-          playerName.replace(/['"]/g, ''),
-          amount,
-          fromClub.replace(/['"]/g, ''),
-          userClub,
-          coachName // Passer le nom du coach pour l'affichage aussi
-        );
-
-        await msg.channel.send(displayText);
-
-      } catch (error) {
-        console.error('[MERCATO] Erreur:', error);
-        await msg.reply("❌ Erreur lors de la génération de l'annonce mercato.");
-      }
+      Object.assign(m, last.prev);
+      await interaction.reply('↩️ Dernière action annulée.');
+      await updateBoardMsg(client, guildId);
       return;
     }
 
-    if (cmd === '!conf') {
-      // Vérifier si --force est utilisé et extraire l'ID journaliste
-      const isForced = rest.includes('--force');
-      const filteredRest = rest.filter(arg => arg !== '--force');
-      let journalistId = null;
-      let n = undefined;
-
-      // FIX: Parsing des arguments amélioré
-      if (filteredRest.length > 0) {
-        const firstArg = parseInt(filteredRest[0], 10);
-        if (!isNaN(firstArg)) {
-          if (isForced && filteredRest.length > 1) {
-            // Mode debug : !conf --force [questions] [journalistId]
-            n = firstArg;
-            const secondArg = parseInt(filteredRest[1], 10);
-            if (!isNaN(secondArg)) {
-              journalistId = secondArg;
-            }
-          } else if (isForced) {
-            // Mode debug : !conf --force [journalistId ou questions]
-            // Si l'argument est >= 1 et <= 5, c'est probablement le nombre de questions
-            // Si l'argument est > 5, c'est probablement un ID journaliste
-            if (firstArg >= 1 && firstArg <= 5) {
-              n = firstArg; // Nombre de questions
-            } else {
-              journalistId = firstArg; // ID journaliste
-            }
-          } else {
-            // Mode normal : !conf [questions]
-            n = firstArg;
-          }
-        }
-      }
-
-      // Vérifier s'il y a une session active
-      const activeSession = store.getPressSession(guildId, userId);
-
-      if (activeSession) {
-        // Continuer la session active
-        const currentQ = activeSession.questions[activeSession.currentIndex];
-        const isLastQuestion = activeSession.currentIndex === activeSession.questions.length - 1;
-
-        let questionText = currentQ;
-        if (isLastQuestion) {
-          questionText += questionText.endsWith('.') ? ' Merci.' : '. Merci.';
-        }
-
-        const matchInfo = `Q${activeSession.currentIndex + 1}/${activeSession.questions.length}`;
-        await msg.channel.send(`🎙️ **${matchInfo}** — ${questionText}`);
-
-        // Lire la question au vocal si connecté
-        const st = getAudioState(guildId);
-        if (st?.connection) {
-          await playPressAudio(guildId, questionText, activeSession.journalist, 'question');
-        }
-
-        // Avancer ou terminer la session
-        const nextSession = store.advancePressSession(guildId, userId);
-        if (!nextSession) {
-          await msg.channel.send("📝 **Fin de la conférence de presse.** Merci !");
-        } else {
-          await msg.channel.send(`💡 Tapez \`!conf\` pour la question suivante (${nextSession.currentIndex + 1}/${nextSession.questions.length}).`);
-        }
-
-        return;
-      }
-
-      // Si pas de session active et pas de --force, refuser
-      if (!isForced) {
-        return void msg.reply("❌ Aucune conférence de presse en cours. Les conférences se déclenchent automatiquement après plusieurs matchs ou utilisez `!conf --force` pour en forcer une.");
-      }
-
-      // Logique pour démarrer une nouvelle conférence (SEULEMENT si forcée)
-      const coach = store.getCoachProfile(guildId, userId);
-      const recentMatches = store.getMatchHistory(guildId, userId, 5);
-
-      if (recentMatches.length === 0) {
-        return void msg.reply("Aucun match dans l'historique. Termine un match avec `!fin` pour générer une conférence de presse.");
-      }
-
-      // Le dernier match (le plus récent) devient le contexte principal
-      const lastMatch = recentMatches[0];
-
-      const ctx = {
-        coach: coach?.name || msg.member?.displayName || msg.author.username,
-        team: lastMatch.team || 'votre équipe',
-        opp: lastMatch.opponent || 'l\'adversaire',
-        for: lastMatch.scoreFor || 0,
-        against: lastMatch.scoreAgainst || 0,
-        scorersFor: lastMatch.scorersFor || [],
-        scorersAgainst: lastMatch.scorersAgainst || [],
-        phase: lastMatch.competition || 'Ligue 1',
-        matchday: lastMatch.matchday,
-        nationality: coach?.nationality,
-        age: coach?.age,
-        currentSeason: coach?.currentSeason,
-        recentMatches: recentMatches.slice(1).map(match => ({
-          opponent: match.opponent,
-          result: `${match.scoreFor}-${match.scoreAgainst}`,
-          competition: match.competition,
-          matchday: match.matchday,
-          scorersFor: match.scorersFor || [],
-          scorersAgainst: match.scorersAgainst || [],
-          date: match.date
-        }))
-      };
-
-      const pressResult = await generateQuestions(ctx, n || 3, journalistId); // FIX: 3 par défaut
-      const presentation = pressResult.presentation || `Bonjour coach ${ctx.coach}, journaliste.`;
-      const qs = pressResult.questions || [];
-      const journalist = pressResult.journalist || { name: "Journaliste", media: "Média Sport" };
-
-      // Mode classique avec --force : afficher toutes les questions d'un coup
-      const lines = qs.map((q, i) => `**Q${i + 1}.** ${q}`).join('\n');
-      const matchInfo = `${ctx.team} ${ctx.for}-${ctx.against} ${ctx.opp}${ctx.matchday ? ` (J${ctx.matchday})` : ''}`;
-      
-      const debugInfo = journalistId ? ` — Debug: ${journalist.name} (ID: ${journalist.id})` : '';
-      const fullMessage = `🎙️ **Conférence de presse (forcée)** — ${matchInfo}${debugInfo}\n\n${presentation}\n\n${lines}`;
-      await msg.channel.send({ content: fullMessage });
-
-      // FIX: Supprimer la duplication - utiliser SEULEMENT playPressAudio
-      const st = getAudioState(guildId);
-      if (st?.connection) {
-        // Présentation
-        await playPressAudio(guildId, presentation, journalist, 'presentation');
-
-        // Questions une par une
-        for (const q of qs) {
-          await playPressAudio(guildId, q, journalist, 'question');
-        }
-      }
-
-      return;
-    }
-
-    if (cmd === '!journalistes' || cmd === '!journalists') {
-      const { getAllJournalists } = require('./press');
-      const allJournalists = getAllJournalists();
-      
-      if (allJournalists.length === 0) {
-        return void msg.reply("Aucun journaliste disponible.");
-      }
-
-      const lines = ["📰 **Liste des journalistes disponibles :**"];
-      allJournalists.forEach(j => {
-        lines.push(`**ID ${j.id}** — ${j.name} (${j.media})`);
-      });
-      
-      lines.push('');
-      lines.push('💡 Utilise `!conf --force [journalistId]` pour forcer un journaliste spécifique');
-      lines.push('💡 Exemple : `!conf --force 2` pour Daniel Riolo');
-
-      // Diviser en plusieurs messages si trop long
-      const maxLength = 2000;
-      let currentMessage = '';
-      
-      for (const line of lines) {
-        if ((currentMessage + line + '\n').length > maxLength) {
-          await msg.reply(currentMessage);
-          currentMessage = line + '\n';
-        } else {
-          currentMessage += line + '\n';
-        }
-      }
-      
-      if (currentMessage.trim()) {
-        await msg.reply(currentMessage);
-      }
-      
-      return;
-    }
-
-
-    // ===== Suivi de journée =====
-
-    // ===== But simple =====
-    if (cmd.startsWith('!but')) {
-      if (!st?.connection) {
-        await msg.reply("Je ne suis pas connecté. Lance d’abord `!multiplex`.");
-        return;
-      }
-      const restStr = cmd.slice('!but'.length);
-      let club = null, scorer = null;
-      if (restStr.startsWith('-')) {
-        const parts = restStr.slice(1).split('-');
-        club = parts[0] || null;
-        if (parts.length > 1) scorer = parts.slice(1).join(' ');
-      }
-      const text = buildTtsSentence(club, scorer);
-      await enqueueJingleAndTTS(guildId, text);
-      await msg.react('🎙️');
-      return;
-    }
-
-    // ====== NOUVELLES COMMANDES COACH PROFILE ======
-
-    if (cmd === '!no') {
-      // Vérifier s'il y a une session de conférence de presse active
-      const activeSession = store.getPressSession(guildId, userId);
-      
-      if (!activeSession) {
-        return void msg.reply("❌ Aucune conférence de presse en cours à annuler.");
-      }
-      
-      store.cancelPressSession(guildId, userId);
-      await msg.reply("✅ Conférence de presse annulée.");
-      return;
-    }
-
-    if (cmd === '!coach') {
+    // === Profil Coach ===
+    if (commandName === 'coach') {
       const profile = store.getCoachProfile(guildId, userId);
       if (!profile || Object.keys(profile).length === 0) {
-        return void msg.reply("Aucun profil coach configuré. Utilise `!coach-set nom <nom>` pour commencer.");
+        await interaction.reply("Aucun profil coach configuré. Utilise `/coach-set` pour commencer.");
+        return;
       }
 
-      const lines = [];
-      lines.push(`👤 **Profil Coach** — ${msg.author.username}`);
+      const lines = [`👤 **Profil Coach** — ${user.username}`];
       if (profile.name) lines.push(`Nom : ${profile.name}`);
       if (profile.nationality) lines.push(`Nationalité : ${profile.nationality}`);
       if (profile.age) lines.push(`Âge : ${profile.age} ans`);
-      if (profile.currentCompetition) lines.push(`Compétition actuelle : ${profile.currentCompetition}`);
+      if (profile.currentCompetition) lines.push(`Compétition : ${profile.currentCompetition}`);
       if (profile.currentSeason) lines.push(`Saison : ${profile.currentSeason}`);
-      if (profile.currentMatchday) lines.push(`Journée actuelle : J${profile.currentMatchday}`);
+      if (profile.currentMatchday) lines.push(`Journée : J${profile.currentMatchday}`);
 
-      await msg.reply(lines.join('\n'));
+      await interaction.reply(lines.join('\n'));
       return;
     }
 
-    if (cmd === '!coach-set') {
-      if (rest.length < 2) {
-        return void msg.reply("Utilise : `!coach-set <propriété> <valeur>`\nPropriétés : nom, nationalité, age, compétition, saison, journée");
-      }
-
-      const [prop, ...valueParts] = rest;
-      const value = valueParts.join(' ');
+    if (commandName === 'coach-set') {
+      const prop = options.getString('propriete');
+      const value = options.getString('valeur');
 
       const validProps = {
         'nom': 'name',
-        'name': 'name',
         'nationalité': 'nationality',
-        'nationality': 'nationality',
         'age': 'age',
-        'âge': 'age',
         'compétition': 'currentCompetition',
-        'competition': 'currentCompetition',
         'saison': 'currentSeason',
-        'season': 'currentSeason',
-        'journée': 'currentMatchday',
-        'journee': 'currentMatchday',
-        'matchday': 'currentMatchday',
-        'j': 'currentMatchday'
+        'journée': 'currentMatchday'
       };
 
-      const mappedProp = validProps[prop.toLowerCase()];
-      if (!mappedProp) {
-        return void msg.reply("Propriété inconnue. Utilise : nom, nationalité, age, compétition, saison, journée");
-      }
-
+      const mappedProp = validProps[prop];
       const updates = {};
+
       if (mappedProp === 'age') {
         const age = parseInt(value, 10);
         if (isNaN(age) || age < 16 || age > 99) {
-          return void msg.reply("L'âge doit être un nombre entre 16 et 99.");
+          await interaction.reply("L'âge doit être un nombre entre 16 et 99.");
+          return;
         }
         updates[mappedProp] = age;
       } else if (mappedProp === 'currentMatchday') {
         const matchday = parseInt(value, 10);
         if (isNaN(matchday) || matchday < 1 || matchday > 99) {
-          return void msg.reply("La journée doit être un nombre entre 1 et 99.");
+          await interaction.reply("La journée doit être un nombre entre 1 et 99.");
+          return;
         }
         updates[mappedProp] = matchday;
       } else {
@@ -1298,197 +1625,104 @@ client.on('messageCreate', async (msg) => {
       }
 
       store.updateCoachProfile(guildId, userId, updates);
-      await msg.reply(`✅ ${prop} mis à jour : **${value}**`);
+      await interaction.reply(`✅ ${prop} mis à jour : **${value}**`);
       return;
     }
 
-    // ====== NOUVELLES COMMANDES COMPÉTITION/JOURNÉE ======
-
-    if (cmd === '!comp') {
-      if (rest.length === 0) {
-        // Afficher la compétition actuelle avec info sur l'auto-incrémentation
+    // === Gestion Compétition ===
+    if (commandName === 'competition') {
+      const competition = options.getString('nom');
+      
+      if (!competition) {
         const coach = store.getCoachProfile(guildId, userId);
         const current = coach?.currentCompetition || 'Ligue 1';
-
+        
         if (current === 'Ligue 1') {
-          // FIX: Afficher le compteur actuel au lieu de calculer
           const nextMatchday = coach?.currentMatchday || 1;
-          return void msg.reply(`🏆 Compétition actuelle : **${current}** (J${nextMatchday} auto-calculée)\n💡 Les journées s'incrémentent automatiquement en Ligue 1`);
+          await interaction.reply(`🏆 Compétition actuelle : **${current}** (J${nextMatchday} auto-calculée)\n💡 Les journées s'incrémentent automatiquement en Ligue 1`);
         } else {
           const matchday = coach?.currentMatchday ? ` (J${coach.currentMatchday})` : '';
-          return void msg.reply(`🏆 Compétition actuelle : **${current}**${matchday}`);
+          await interaction.reply(`🏆 Compétition actuelle : **${current}**${matchday}`);
         }
+        return;
       }
 
-      const competition = rest.join(' ').trim();
       store.updateCoachProfile(guildId, userId, { currentCompetition: competition });
-
-      // Message informatif sur l'auto-incrémentation
       const autoInfo = competition === 'Ligue 1' ? '\n💡 Les journées s\'incrémentent automatiquement en Ligue 1' : '';
-      await msg.reply(`🏆 Compétition définie : **${competition}**${autoInfo}`);
+      await interaction.reply(`🏆 Compétition définie : **${competition}**${autoInfo}`);
       return;
     }
 
-    if (cmd === '!journee' || cmd === '!j') {
-      if (rest.length === 0) {
-        // Afficher la journée actuelle avec info auto-incrémentation
-        const coach = store.getCoachProfile(guildId, userId);
-        const competition = coach?.currentCompetition || 'Ligue 1';
-
-        if (competition === 'Ligue 1') {
-          // FIX: Afficher le compteur actuel au lieu de calculer
-          const nextMatchday = coach?.currentMatchday || 1;
-          return void msg.reply(`📅 Prochaine journée Ligue 1 : **J${nextMatchday}** (auto-calculée)\n💡 Les journées s'incrémentent automatiquement en Ligue 1`);
-        } else {
-          const current = coach?.currentMatchday || 'Non définie';
-          const comp = coach?.currentCompetition ? ` (${coach.currentCompetition})` : '';
-          return void msg.reply(`📅 Journée actuelle : **J${current}**${comp}`);
-        }
-      }
-
-      const matchday = parseInt(rest[0], 10);
-      if (isNaN(matchday) || matchday < 1 || matchday > 99) {
-        return void msg.reply("La journée doit être un nombre entre 1 et 99.");
-      }
-
-      store.updateCoachProfile(guildId, userId, { currentMatchday: matchday });
-      await msg.reply(`📅 Journée définie : **J${matchday}**`);
-      return;
-    }
-
-    if (cmd === '!nextj') {
-      // Avancer à la journée suivante
-      const coach = store.getCoachProfile(guildId, userId);
-      const current = coach?.currentMatchday || 0;
-      const next = current + 1;
-
-      if (next > 99) {
-        return void msg.reply("Journée maximum atteinte (99).");
-      }
-
-      store.updateCoachProfile(guildId, userId, { currentMatchday: next });
-      await msg.reply(`📅 Passage à la journée suivante : **J${next}**`);
-      return;
-    }
-
-    if (cmd === '!season') {
-      if (rest.length === 0) {
-        // Afficher la saison actuelle
+    if (commandName === 'season') {
+      const season = options.getString('saison');
+      
+      if (!season) {
         const coach = store.getCoachProfile(guildId, userId);
         const current = coach?.currentSeason || 'Non définie';
-        return void msg.reply(`📆 Saison actuelle : **${current}**`);
+        await interaction.reply(`📆 Saison actuelle : **${current}**`);
+        return;
       }
 
-      const season = rest.join(' ').trim();
       store.updateCoachProfile(guildId, userId, { currentSeason: season });
-      await msg.reply(`📆 Saison définie : **${season}**`);
+      await interaction.reply(`📆 Saison définie : **${season}**`);
       return;
     }
 
-    // ====== NOUVELLES COMMANDES GESTION COMPTEUR JOURNÉE ======
-
-    if (cmd === '!matchday-reset') {
-      store.updateCoachProfile(guildId, userId, { currentMatchday: 1 });
-      await msg.reply(`📅 Compteur de journée remis à zéro : **J1**`);
-      return;
-    }
-
-    if (cmd === '!matchday-set') {
-      if (rest.length === 0) {
-        return void msg.reply("Utilise : `!matchday-set <journée>`\nExemple : `!matchday-set 15`");
-      }
-
-      const matchday = parseInt(rest[0], 10);
-      if (isNaN(matchday) || matchday < 1 || matchday > 99) {
-        return void msg.reply("La journée doit être un nombre entre 1 et 99.");
+    if (commandName === 'matchday') {
+      const matchday = options.getInteger('journee');
+      
+      if (!matchday) {
+        const coach = store.getCoachProfile(guildId, userId);
+        const competition = coach?.currentCompetition || 'Ligue 1';
+        
+        if (competition === 'Ligue 1') {
+          const nextMatchday = coach?.currentMatchday || 1;
+          await interaction.reply(`📅 Prochaine journée Ligue 1 : **J${nextMatchday}** (auto-calculée)`);
+        } else {
+          const current = coach?.currentMatchday || 'Non définie';
+          await interaction.reply(`📅 Journée actuelle : **J${current}**`);
+        }
+        return;
       }
 
       store.updateCoachProfile(guildId, userId, { currentMatchday: matchday });
-      await msg.reply(`📅 Compteur de journée défini : **J${matchday}**`);
+      await interaction.reply(`📅 Journée définie : **J${matchday}**`);
       return;
     }
 
-    // ====== COMMANDE SETUP RAPIDE ======
-
-    if (cmd === '!setup') {
-      if (rest.length < 2) {
-        return void msg.reply("Utilise : `!setup <compétition> <journée> [saison]`\nExemple : `!setup \"Ligue 1\" 15 \"2024-2025\"`");
+    // === Audio ===
+    if (commandName === 'champions-league') {
+      if (!st?.connection) {
+        await interaction.reply("Je ne suis pas connecté. Lance d'abord `/multiplex`.");
+        return;
       }
 
-      const [competition, matchdayStr, ...seasonParts] = rest;
-      const matchday = parseInt(matchdayStr, 10);
-
-      if (isNaN(matchday) || matchday < 1 || matchday > 99) {
-        return void msg.reply("La journée doit être un nombre entre 1 et 99.");
-      }
-
-      const updates = {
-        currentCompetition: competition,
-        currentMatchday: matchday
-      };
-
-      if (seasonParts.length > 0) {
-        updates.currentSeason = seasonParts.join(' ');
-      }
-
-      store.updateCoachProfile(guildId, userId, updates);
-
-      const seasonText = updates.currentSeason ? ` (${updates.currentSeason})` : '';
-      await msg.reply(`⚙️ Configuration mise à jour :\n🏆 Compétition : **${competition}**\n📅 Journée : **J${matchday}**${seasonText}`);
-      return;
-    }
-
-    if (cmd === '!match-add') {
-      // !match-add opponent score_for score_against [competition] [matchday]
-      if (rest.length < 3) {
-        return void msg.reply("Utilise : `!match-add <adversaire> <score_pour> <score_contre> [compétition] [journée]`");
-      }
-
-      const [opponent, scoreForStr, scoreAgainstStr, competition, matchday] = rest;
-      const scoreFor = parseInt(scoreForStr, 10);
-      const scoreAgainst = parseInt(scoreAgainstStr, 10);
-
-      if (isNaN(scoreFor) || isNaN(scoreAgainst)) {
-        return void msg.reply("Les scores doivent être des nombres valides.");
-      }
-
-      const m = getMatch(guildId, userId);
-      const coach = store.getCoachProfile(guildId, userId);
-      const finalCompetition = competition || coach?.currentCompetition || 'Ligue 1';
-
-      // NOUVEAU : Auto-incrémentation pour Ligue 1 si pas de journée spécifiée
-      let finalMatchday = null;
-      if (matchday) {
-        finalMatchday = parseInt(matchday, 10);
-      } else if (finalCompetition === 'Ligue 1') {
-        // FIX: Utiliser le compteur du profil coach au lieu de getNextMatchday()
-        const coach = store.getCoachProfile(guildId, userId);
-        const currentMatchday = coach?.currentMatchday || 1;
-        finalMatchday = currentMatchday;
-        // Mettre à jour le profil coach avec la nouvelle journée
-        store.updateCoachProfile(guildId, userId, { currentMatchday: currentMatchday + 1 });
+      const success = await playAudioFile(guildId, UCL_ANTHEM_PATH);
+      if (success) {
+        await interaction.reply('🎵 Hymne de la Ligue des Champions en cours...');
       } else {
-        finalMatchday = coach?.currentMatchday || null;
+        await interaction.reply("❌ Fichier `ucl_anthem.mp3` introuvable dans le dossier assets.");
       }
-
-      const matchData = {
-        team: m.team,
-        opponent,
-        scoreFor,
-        scoreAgainst,
-        competition: finalCompetition,
-        matchday: finalMatchday,
-        scorersFor: [],
-        scorersAgainst: []
-      };
-
-      const matchId = store.addMatchToHistory(guildId, userId, matchData);
-      const autoInfo = finalCompetition === 'Ligue 1' && finalMatchday && !matchday ? ` (J${finalMatchday} auto-assignée)` : '';
-      await msg.reply(`✅ Match ajouté à l'historique (ID: ${matchId})${autoInfo}`);
       return;
     }
 
-    if (cmd === '!history') {
+    if (commandName === 'europa-league') {
+      if (!st?.connection) {
+        await interaction.reply("Je ne suis pas connecté. Lance d'abord `/multiplex`.");
+        return;
+      }
+
+      const success = await playAudioFile(guildId, EUROPA_ANTHEM_PATH);
+      if (success) {
+        await interaction.reply('🎵 Hymne de l\'Europa League en cours...');
+      } else {
+        await interaction.reply("❌ Fichier `europa_anthem.mp3` introuvable dans le dossier assets.");
+      }
+      return;
+    }
+
+    // === Historique ===
+    if (commandName === 'history') {
       const limit = rest[0] ? Math.min(parseInt(rest[0], 10) || 5, 20) : 5;
       const matches = store.getMatchHistory(guildId, userId, limit);
 
@@ -1678,6 +1912,9 @@ client.on('messageCreate', async (msg) => {
 
         lines.push(`${emoji} **${scorer.name}** — ${scorer.goals} ${goalText} (${scorer.matches} ${matchText})`);
       });
+
+      await msg.reply(lines.join('\n'));
+      return;
     }
   }
   catch (e) {
@@ -1728,7 +1965,7 @@ async function playPressAudio(guildId, text, journalist, type = 'question') {
   
   try {
     await synthToFile(text, ttsPath, journalistVoice, voiceParams);
-    const res = createAudioResource(ttsPath);
+    const res = createAudioResource(ttsPath); 
     res.metadata = { tempPath: ttsPath };
     enqueue(guildId, [res]);
     console.log(`[PRESS AUDIO] Joué avec voix ${journalistVoice} (${type})`);

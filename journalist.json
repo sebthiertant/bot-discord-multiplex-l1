@@ -97,7 +97,7 @@
         "persona": "théâtral, grande emphase dans le ton, apprécié pour sa passion. Il aime créer une atmosphère festive autour des matchs.",
         "voice": {
             "name": "fr-FR-LucienMultilingualNeural",
-                "rate": 1.2,
+                "rate": 2,
                 "pitch": 0.3,
                 "degree": 2,
             "style": "excited"
