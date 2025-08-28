@@ -10,7 +10,7 @@ Voici la liste des clubs disposant d'annonces personnalisées dans le bot :
 - clermont
 - nantes
 - lehavre
-- stetienne
+- saintetienne
 - nice
 - lens
 - lille

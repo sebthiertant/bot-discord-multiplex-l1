@@ -44,12 +44,12 @@ const CLUB_VARIANTS = {
     { text: "Les canaris qui marquent !", weight: 0.1 }
   ],
   "lehavre": [
-    { text: "But pour le Havre AC !", weight: 3 },
+    { text: "But pour le Havre !", weight: 3 },
     { text: "C'est le but pour les Havrais !", weight: 3 },
     { text: "Le HAC qui fait trembler les cages !", weight: 2 },
     { text: "Les Havreungeursses frappent encore !", weight: 0.1 }
   ],
-  "stetienne": [
+  "saintetienne": [
     { text: "But pour l'AS Saint-Étienne !", weight: 3 },
     { text: "C'est le but pour les Verts !", weight: 3 },
     { text: "Saint-Étienne qui fait trembler les cages !", weight: 2 }
